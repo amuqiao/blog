@@ -14,6 +14,8 @@
 - 需要原样发布的独立 HTML demo、可直接打开的实验页面、完整前端静态小作品，放在同名静态目录：`static/posts/<post-slug>/...`。
 - `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 `<post-slug>` 必须一致，用 slug 建立一一对应关系。
 - 文章引用同名静态目录中的独立 HTML 时，优先使用同级相对路径，例如 `2d.html`、`3d.html`；构建后对应 `/posts/<post-slug>/2d.html`、`/posts/<post-slug>/3d.html`。
+- 对“Markdown 摘要 + HTML 交互页”的文章，HTML 是正文和交互真源；Markdown 只保留 front matter、少量导语、入口按钮和 iframe。
+- Markdown 不重复维护 HTML 中的完整正文、模块目录或交互说明，避免形成两份笔记。
 - 不要在文章或配置中引用 `.data/`；`.data/` 只作为临时输入、截图或外部素材缓存，不属于 Hugo 发布内容。
 
 ## Hugo 启动入口
