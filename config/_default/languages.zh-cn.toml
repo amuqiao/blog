@@ -1,0 +1,20 @@
+disabled = false
+locale = "zh-cn"
+label = "简体中文"
+weight = 1
+title = "amuqiao 的博客"
+
+[params]
+  displayName = "简体中文"
+  isoCode = "zh-cn"
+  rtl = false
+  dateFormat = "2006-01-02"
+  description = "记录技术、项目和长期思考的个人博客。"
+
+[params.author]
+  name = "amuqiao"
+  headline = "记录技术、项目和长期思考。"
+  bio = "这里会沉淀工程实践、读书笔记和个人项目复盘。"
+  links = [
+    { github = "https://github.com/amuqiao" }
+  ]
