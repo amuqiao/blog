@@ -1,173 +1,144 @@
 # amuqiao 的博客
 
-这个仓库使用 Hugo + Blowfish 构建个人博客。主题通过 Git submodule 放在 `themes/blowfish/`，站点配置集中在 `config/_default/`。
+<p align="center">
+  <a href="https://amuqiao.github.io/blog/">
+    <img src="assets/images/v3/welcome.png" alt="amuqiao 的博客首页视觉图" width="820">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://amuqiao.github.io/blog/">在线访问</a>
+  ·
+  <a href="docs/github-pages-deploy.md">部署说明</a>
+  ·
+  <a href="content/posts/">文章目录</a>
+  ·
+  <a href=".github/workflows/hugo.yaml">GitHub Actions</a>
+</p>
+
+<p align="center">
+  <a href="https://gohugo.io/"><img alt="Hugo" src="https://img.shields.io/badge/Hugo-0.165.0-ff4088?logo=hugo&logoColor=white"></a>
+  <a href="https://blowfish.page/"><img alt="Blowfish" src="https://img.shields.io/badge/Theme-Blowfish-2f81f7"></a>
+  <a href="https://github.com/amuqiao/blog/actions/workflows/hugo.yaml"><img alt="Deploy" src="https://github.com/amuqiao/blog/actions/workflows/hugo.yaml/badge.svg"></a>
+  <a href="https://amuqiao.github.io/blog/"><img alt="GitHub Pages" src="https://img.shields.io/badge/GitHub%20Pages-amuqiao.github.io%2Fblog-222?logo=github"></a>
+</p>
+
+这个仓库使用 [Hugo](https://gohugo.io/) + [Blowfish](https://blowfish.page/) 构建个人博客，发布到 [https://amuqiao.github.io/blog/](https://amuqiao.github.io/blog/)。
 
 ## 工作方式
 
-Hugo 负责把 `content/` 里的 Markdown 文章构建成静态站点，Blowfish 负责页面布局、导航、搜索、文章元信息和主题样式。
-
-主干目录如下：
-
 ```text
-config/_default/             # Hugo 和 Blowfish 配置
-archetypes/                  # 新文章模板
-content/                     # Markdown 内容
-content/posts/               # 博客文章
-themes/blowfish/             # Blowfish 主题 submodule
-static/                      # 原样复制到站点根目录的静态文件
-assets/                      # 交给 Hugo Pipes 处理的资源
-docs/                        # 仓库维护文档
-public/                      # 构建产物，不提交
+Markdown 文章        content/posts/<slug>/index.md
+静态演示与交互页     static/posts/<slug>/
+主题                themes/blowfish/，通过 Git submodule 管理
+站点配置            config/_default/
+部署                GitHub Actions -> GitHub Pages
 ```
 
-## 本地准备
+Hugo 负责把 `content/` 构建成静态站点，Blowfish 负责页面布局、导航、搜索、文章元信息和主题样式。
 
-先安装 Hugo。当前随仓库引入的 Blowfish 子模块声明需要 extended 版 Hugo，兼容范围是 `0.162.0` 到 `0.165.0`；以后升级主题时，以 `themes/blowfish/config.toml` 为准。
+## 快速开始
 
-macOS 可以使用 Homebrew：
+环境要求：
 
-```bash
-brew install hugo
-```
+- [Hugo extended](https://gohugo.io/installation/) `0.162.0` - `0.165.0`
+- Git submodule 支持，用于拉取 [Blowfish](https://blowfish.page/) 主题
 
-确认版本：
-
-```bash
-hugo version
-```
-
-首次克隆本仓库后，拉取主题 submodule：
+首次克隆后拉取主题：
 
 ```bash
 git submodule update --init --recursive --depth 1
 ```
 
-## 启动入口
-
-仓库入口借鉴服务项目的分层方式，但按静态博客的实际工作流拆成两类：
-
-```text
-blog    日常写作、前台预览、构建、建文章
-doctor  排障诊断，检查环境、主题、内容映射和严格构建
-```
-
-查看可复制命令：
-
-```bash
-./run.sh -h
-```
-
-最常用的两个命令可以直接用简写：
-
-```bash
-./run.sh up
-./run.sh down
-```
-
-## 本地预览
-
-启动开发服务器：
+启动本地预览：
 
 ```bash
 ./run.sh up
 ```
 
-这个命令等价于 `./run.sh blog dev`，会以前台方式运行 `hugo server -D`，Hugo 会监听文章、配置和静态资源变更并触发浏览器热重载。当前 `baseURL` 带 `/blog/` 路径，默认访问地址是 `http://localhost:1313/blog/`。
+默认访问 [http://localhost:1313/blog/](http://localhost:1313/blog/)。Hugo 会监听文章、配置和静态资源变化，并触发浏览器热重载。
 
-停止本地预览服务时，在运行命令的终端按 `Ctrl+C`。
-
-本地预览按单例处理：如果目标端口上已经运行的是当前项目的 Hugo 预览服务，再次执行 `./run.sh blog dev` 会提示“已运行”并成功退出，不会重复启动第二个服务。
-
-如果找不到旧服务所在终端，可以通过入口停止当前项目的本地预览服务：
+停止本地预览：
 
 ```bash
 ./run.sh down
-HUGO_PORT=1314 ./run.sh down
 ```
 
-如果默认端口被占用，可以临时换端口：
+## 常用命令
 
-```bash
-HUGO_PORT=1314 ./run.sh up
-```
+| 命令 | 用途 |
+| --- | --- |
+| `./run.sh -h` | 查看所有常用入口 |
+| `./run.sh up` | 前台启动本地预览服务 |
+| `./run.sh down` | 停止当前项目的本地预览服务 |
+| `HUGO_PORT=1314 ./run.sh up` | 临时换端口启动 |
+| `./run.sh blog new-post my-post` | 创建文章页面包 |
+| `./run.sh blog build` | 构建静态站点到 `public/` |
+| `./run.sh blog verify` | 发布前最小验证 |
+| `./run.sh doctor all` | 完整排障检查 |
 
-如果看到“本地预览端口已被占用”或 `address already in use`，说明本地预览端口被其他项目或进程占用。先查看占用情况：
+本地预览按单例处理：如果目标端口上已经运行的是当前项目的 Hugo 预览服务，再次执行 `./run.sh up` 会提示已运行并成功退出。
 
-```bash
-./run.sh doctor port
-./run.sh doctor port 1314
-```
+## 目录结构
 
-## 构建
-
-生成静态站点：
-
-```bash
-./run.sh blog build
-```
-
-构建产物会输出到 `public/`，该目录已加入 `.gitignore`。
-
-## 部署
-
-本站通过 GitHub Actions 发布到 GitHub Pages：
-
-```text
-https://amuqiao.github.io/blog/
-```
-
-GitHub 仓库的 Pages 发布源应选择 `GitHub Actions`。推送到 `main` 后，`.github/workflows/hugo.yaml` 会自动构建并部署站点。
-
-详细流程和 404 排查见 [docs/github-pages-deploy.md](docs/github-pages-deploy.md)。
+| 路径 | 说明 |
+| --- | --- |
+| [`config/_default/`](config/_default/) | Hugo 和 Blowfish 配置 |
+| [`archetypes/`](archetypes/) | 新文章模板 |
+| [`content/posts/`](content/posts/) | 博客文章页面包 |
+| [`static/posts/`](static/posts/) | 文章对应的原样静态资源 |
+| [`assets/`](assets/) | Hugo Pipes 处理的图片和 CSS |
+| [`themes/blowfish/`](themes/blowfish/) | Blowfish 主题 submodule |
+| [`docs/`](docs/) | 仓库维护文档 |
+| `public/` | 构建产物，不提交 |
 
 ## 写文章
 
-推荐使用页面包组织文章：
+推荐使用页面包：
 
 ```bash
 ./run.sh blog new-post my-post
 ```
 
-也可以手动创建：
+生成结构：
 
 ```text
 content/posts/my-post/
 └── index.md
 ```
 
-文章 front matter 示例：
+交互文章采用“Markdown 发布壳 + HTML 正文真源”的方式：
 
-```yaml
----
-title: "文章标题"
-date: 2026-09-07
-draft: false
-tags:
-  - Hugo
-categories:
-  - 博客建设
----
+```text
+content/posts/<slug>/index.md          # front matter、少量导语、入口按钮、iframe
+static/posts/<slug>/interactive.html   # 完整正文和交互内容
 ```
 
-## 常用维护
+不要在发布内容中引用 `.data/`；`.data/` 只作为临时输入、截图或素材缓存。
 
-发布前运行最小验证：
+## 部署
+
+GitHub 仓库的 Pages 发布源选择 `GitHub Actions` 后，推送到 `main` 会自动触发部署：
+
+```bash
+git add .
+git commit -m "chore: update blog"
+git push origin main
+```
+
+查看部署状态：
+
+- [Actions 运行记录](https://github.com/amuqiao/blog/actions)
+- [部署 workflow](.github/workflows/hugo.yaml)
+- [GitHub Pages 部署说明](docs/github-pages-deploy.md)
+
+## 维护
+
+发布前建议先运行：
 
 ```bash
 ./run.sh blog verify
-```
-
-排查本地环境、主题 submodule、文章与静态 demo 映射、构建问题：
-
-```bash
-./run.sh doctor all
-```
-
-排查端口占用：
-
-```bash
-./run.sh doctor port
-./run.sh doctor port 1314
+./run.sh doctor content-map
 ```
 
 更新 Blowfish 主题：
@@ -176,4 +147,4 @@ categories:
 git submodule update --remote --merge themes/blowfish
 ```
 
-如果正式域名不是 GitHub Pages 的 `https://amuqiao.github.io/blog/`，发布前修改 `config/_default/hugo.toml` 里的 `baseURL`，并同步检查部署文档。
+如果正式域名不是 [https://amuqiao.github.io/blog/](https://amuqiao.github.io/blog/)，发布前修改 [`config/_default/hugo.toml`](config/_default/hugo.toml) 里的 `baseURL`，并同步检查 [部署文档](docs/github-pages-deploy.md)。
