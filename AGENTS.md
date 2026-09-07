@@ -6,3 +6,12 @@
 - 提交信息默认使用中文；无仓库规范时优先使用 Conventional Commits，例如 `docs:`、`feat:`、`fix:`、`refactor:`、`chore:`。
 - 提交信息优先写“改了什么”和对象，不写空泛标题。
 - 只在用户明确要求时提交；非明确要求下不做 `amend`，不改写历史。
+
+## Hugo 博客资源映射
+
+- 普通文章使用页面包：`content/posts/<post-slug>/index.md`。
+- 文章专属图片、PDF、JSON、音频、视频等页面资源，优先放在同一个页面包内：`content/posts/<post-slug>/...`。
+- 需要原样发布的独立 HTML demo、可直接打开的实验页面、完整前端静态小作品，放在同名静态目录：`static/posts/<post-slug>/...`。
+- `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 `<post-slug>` 必须一致，用 slug 建立一一对应关系。
+- 文章引用同名静态目录中的独立 HTML 时，优先使用同级相对路径，例如 `2d.html`、`3d.html`；构建后对应 `/posts/<post-slug>/2d.html`、`/posts/<post-slug>/3d.html`。
+- 不要在文章或配置中引用 `.data/`；`.data/` 只作为临时输入、截图或外部素材缓存，不属于 Hugo 发布内容。
