@@ -4,21 +4,61 @@
   weight = 10
 
 [[main]]
-  name = "分类"
-  pageRef = "categories"
+  name = "系列"
+  pageRef = "series"
   weight = 20
+
+[[main]]
+  name = "项目"
+  pageRef = "projects"
+  weight = 30
+
+[[main]]
+  name = "手记"
+  pageRef = "notes"
+  weight = 40
+
+[[main]]
+  name = "关于"
+  pageRef = "about"
+  weight = 50
 
 [[main]]
   name = "标签"
   pageRef = "tags"
+  weight = 60
+
+[[footer]]
+  name = "文章"
+  pageRef = "posts"
+  weight = 10
+
+[[footer]]
+  name = "系列"
+  pageRef = "series"
+  weight = 20
+
+[[footer]]
+  name = "项目"
+  pageRef = "projects"
   weight = 30
+
+[[footer]]
+  name = "手记"
+  pageRef = "notes"
+  weight = 40
+
+[[footer]]
+  name = "关于"
+  pageRef = "about"
+  weight = 50
 
 [[footer]]
   name = "标签"
   pageRef = "tags"
-  weight = 10
+  weight = 60
 
 [[footer]]
   name = "分类"
   pageRef = "categories"
-  weight = 20
+  weight = 70

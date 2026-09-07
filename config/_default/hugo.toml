@@ -11,6 +11,7 @@ defaultContentLanguage = "zh-cn"
 
 enableRobotsTXT = true
 summaryLength = 0
+hasCJKLanguage = true
 
 buildDrafts = false
 buildFuture = false
