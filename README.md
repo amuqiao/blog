@@ -16,6 +16,7 @@ content/posts/               # 博客文章
 themes/blowfish/             # Blowfish 主题 submodule
 static/                      # 原样复制到站点根目录的静态文件
 assets/                      # 交给 Hugo Pipes 处理的资源
+docs/                        # 仓库维护文档
 public/                      # 构建产物，不提交
 ```
 
@@ -107,6 +108,18 @@ HUGO_PORT=1314 ./run.sh up
 
 构建产物会输出到 `public/`，该目录已加入 `.gitignore`。
 
+## 部署
+
+本站通过 GitHub Actions 发布到 GitHub Pages：
+
+```text
+https://amuqiao.github.io/blog/
+```
+
+GitHub 仓库的 Pages 发布源应选择 `GitHub Actions`。推送到 `main` 后，`.github/workflows/hugo.yaml` 会自动构建并部署站点。
+
+详细流程和 404 排查见 [docs/github-pages-deploy.md](docs/github-pages-deploy.md)。
+
 ## 写文章
 
 推荐使用页面包组织文章：
@@ -163,4 +176,4 @@ categories:
 git submodule update --remote --merge themes/blowfish
 ```
 
-如果正式域名不是 GitHub Pages 的 `https://amuqiao.github.io/blog/`，发布前修改 `config/_default/hugo.toml` 里的 `baseURL`。
+如果正式域名不是 GitHub Pages 的 `https://amuqiao.github.io/blog/`，发布前修改 `config/_default/hugo.toml` 里的 `baseURL`，并同步检查部署文档。
