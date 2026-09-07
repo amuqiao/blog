@@ -13,16 +13,6 @@ categories:
 ---
 
 <style>
-  body.max-w-7xl {
-    max-width: 96rem;
-  }
-  #single_header,
-  section.prose > div.min-w-0.max-w-fit,
-  .article-content,
-  article > footer.max-w-prose {
-    width: min(100%, 72rem);
-    max-width: min(100%, 72rem) !important;
-  }
   .diffusion-lab-frame {
     width: 100%;
     height: min(82vh, 900px);
