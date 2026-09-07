@@ -15,3 +15,16 @@
 - `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 `<post-slug>` 必须一致，用 slug 建立一一对应关系。
 - 文章引用同名静态目录中的独立 HTML 时，优先使用同级相对路径，例如 `2d.html`、`3d.html`；构建后对应 `/posts/<post-slug>/2d.html`、`/posts/<post-slug>/3d.html`。
 - 不要在文章或配置中引用 `.data/`；`.data/` 只作为临时输入、截图或外部素材缓存，不属于 Hugo 发布内容。
+
+## Hugo 启动入口
+
+- 统一入口是根目录 `./run.sh <mode> <action>`，`run.sh` 只负责 mode 分发。
+- 常用简写是 `./run.sh up` 和 `./run.sh down`，分别等价于 `./run.sh blog dev` 和 `./run.sh blog stop`。
+- 日常写作、前台预览、构建、验证和建文章走 `./run.sh blog <action>`，实现放在 `scripts/blog.sh`。
+- 排障诊断走 `./run.sh doctor <action>`，实现放在 `scripts/doctor.sh`。
+- 本仓库是静态博客，`blog dev` 以前台方式运行 Hugo server，并依赖 Hugo 自带文件监听与热重载；停止本地预览使用 `Ctrl+C`。
+- `blog dev` 启动前检查 `HUGO_PORT` 是否被占用；如果占用者是当前项目根目录下的 Hugo 进程，视为单例服务已运行并成功退出。
+- `blog stop` 只停止当前项目根目录下、目标端口上的 Hugo 预览服务；端口未运行时成功提示未运行，端口被其他项目或其他进程占用时拒绝停止。
+- `blog dev` 发现端口被其他进程占用时，只打印占用进程和处理建议，不自动换端口，不自动杀进程。
+- 不为 Hugo 本地预览维护后台常驻、PID 文件或独立日志目录；日志直接看当前终端输出。
+- 新增入口动作时，按“日常使用归 `blog`、排障诊断归 `doctor`”分类，并同步更新对应脚本的 `-h` 与 `README.md` 中的常用命令。

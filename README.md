@@ -41,22 +41,68 @@ hugo version
 git submodule update --init --recursive --depth 1
 ```
 
+## 启动入口
+
+仓库入口借鉴服务项目的分层方式，但按静态博客的实际工作流拆成两类：
+
+```text
+blog    日常写作、前台预览、构建、建文章
+doctor  排障诊断，检查环境、主题、内容映射和严格构建
+```
+
+查看可复制命令：
+
+```bash
+./run.sh -h
+```
+
+最常用的两个命令可以直接用简写：
+
+```bash
+./run.sh up
+./run.sh down
+```
+
 ## 本地预览
 
 启动开发服务器：
 
 ```bash
-hugo server -D
+./run.sh up
 ```
 
-当前 `baseURL` 带 `/blog/` 路径，默认访问地址是 `http://localhost:1313/blog/`。
+这个命令等价于 `./run.sh blog dev`，会以前台方式运行 `hugo server -D`，Hugo 会监听文章、配置和静态资源变更并触发浏览器热重载。当前 `baseURL` 带 `/blog/` 路径，默认访问地址是 `http://localhost:1313/blog/`。
+
+停止本地预览服务时，在运行命令的终端按 `Ctrl+C`。
+
+本地预览按单例处理：如果目标端口上已经运行的是当前项目的 Hugo 预览服务，再次执行 `./run.sh blog dev` 会提示“已运行”并成功退出，不会重复启动第二个服务。
+
+如果找不到旧服务所在终端，可以通过入口停止当前项目的本地预览服务：
+
+```bash
+./run.sh down
+HUGO_PORT=1314 ./run.sh down
+```
+
+如果默认端口被占用，可以临时换端口：
+
+```bash
+HUGO_PORT=1314 ./run.sh up
+```
+
+如果看到“本地预览端口已被占用”或 `address already in use`，说明本地预览端口被其他项目或进程占用。先查看占用情况：
+
+```bash
+./run.sh doctor port
+./run.sh doctor port 1314
+```
 
 ## 构建
 
 生成静态站点：
 
 ```bash
-hugo
+./run.sh blog build
 ```
 
 构建产物会输出到 `public/`，该目录已加入 `.gitignore`。
@@ -66,7 +112,7 @@ hugo
 推荐使用页面包组织文章：
 
 ```bash
-hugo new content posts/my-post/index.md
+./run.sh blog new-post my-post
 ```
 
 也可以手动创建：
@@ -91,6 +137,25 @@ categories:
 ```
 
 ## 常用维护
+
+发布前运行最小验证：
+
+```bash
+./run.sh blog verify
+```
+
+排查本地环境、主题 submodule、文章与静态 demo 映射、构建问题：
+
+```bash
+./run.sh doctor all
+```
+
+排查端口占用：
+
+```bash
+./run.sh doctor port
+./run.sh doctor port 1314
+```
 
 更新 Blowfish 主题：
 
