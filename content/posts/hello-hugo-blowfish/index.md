@@ -8,6 +8,9 @@ tags:
   - Blowfish
 categories:
   - 博客建设
+series:
+  - 博客建设
+series_order: 1
 ---
 
 这个仓库已经按 Hugo + Blowfish 的方式初始化。

@@ -7,8 +7,11 @@ heroImage: "images/v3/welcome.png"
 heroButtons:
   - label: "阅读文章"
     url: "/blog/posts/"
-  - label: "查看标签"
-    url: "/blog/tags/"
+  - label: "浏览项目"
+    url: "/blog/projects/"
+    style: "outline"
+  - label: "关于我"
+    url: "/blog/about/"
     style: "outline"
   - label: "在 GitHub 上关注"
     url: "https://github.com/amuqiao"
@@ -23,16 +26,16 @@ heroButtons:
 {{< /stats >}}
 
 {{< feature-grid >}}
-{{< feature icon="code" title="工程实践" url="/blog/categories/博客建设/" label="查看分类" >}}
+{{< feature icon="code" title="工程实践" url="/blog/posts/" label="阅读文章" >}}
 记录开发、工具、架构和部署中的具体经验。
 {{< /feature >}}
-{{< feature icon="folder-git-2" title="个人项目" url="/blog/posts/" label="查看文章" >}}
-把从想法到落地的过程写下来，便于复盘。
+{{< feature icon="list-check" title="专题系列" url="/blog/series/" label="查看系列" >}}
+把分散文章串成长期主题，便于持续追踪。
 {{< /feature >}}
-{{< feature icon="book-open" title="读书笔记" url="/blog/tags/" label="查看标签" >}}
-整理阅读、学习和研究过程中的关键线索。
+{{< feature icon="github" title="个人项目" url="/blog/projects/" label="浏览项目" >}}
+记录从想法、实现到复盘的完整路径。
 {{< /feature >}}
-{{< feature icon="sparkles" title="灵感摘录" url="/blog/categories/" label="查看分类" >}}
-收集短想法、观察和阶段性判断。
+{{< feature icon="lightbulb" title="长期思考" url="/blog/notes/" label="查看手记" >}}
+沉淀阅读、学习和阶段性判断中的关键线索。
 {{< /feature >}}
 {{< /feature-grid >}}

@@ -10,6 +10,9 @@ tags:
   - 可视化
 categories:
   - AI 基础
+series:
+  - AI 学习路线
+series_order: 1
 ---
 
 <style>
