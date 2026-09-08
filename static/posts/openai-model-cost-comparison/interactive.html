@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenAI 模型能力与 API 成本对比</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d7dde8;
+      --panel: #ffffff;
+      --page: #f5f7fb;
+      --blue: #2563eb;
+      --teal: #0f766e;
+      --amber: #b45309;
+      --violet: #7c3aed;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      line-height: 1.55;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 32px 24px 48px; }
+    h1 { margin: 0; font-size: 30px; line-height: 1.25; }
+    .lede { max-width: 800px; margin: 10px 0 0; color: var(--muted); }
+    .notice {
+      margin: 20px 0; padding: 13px 16px; border-left: 4px solid var(--amber);
+      background: #fff8eb; color: #7c4108; font-size: 14px;
+    }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(280px, .95fr); gap: 18px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 20px; }
+    h2 { margin: 0 0 5px; font-size: 18px; }
+    .hint { margin: 0; color: var(--muted); font-size: 13px; }
+    .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0 4px; }
+    .toolbar span { font-size: 13px; color: var(--muted); margin-right: 2px; }
+    button {
+      appearance: none; border: 1px solid var(--line); border-radius: 6px; background: #fff;
+      color: var(--ink); cursor: pointer; font: inherit; font-size: 13px; padding: 7px 10px;
+    }
+    button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+    #price-chart { height: 420px; width: 100%; }
+    .calculator { margin-top: 18px; }
+    .form-row { display: grid; grid-template-columns: 1fr 104px; gap: 12px; align-items: center; margin-top: 12px; }
+    label { font-size: 14px; font-weight: 600; }
+    label small { display: block; margin-top: 1px; color: var(--muted); font-size: 12px; font-weight: 400; }
+    input[type="number"], select {
+      width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 9px;
+      color: var(--ink); font: inherit; text-align: right;
+    }
+    select { text-align: left; }
+    .estimate { margin: 18px 0 0; padding: 14px; border-radius: 6px; background: #edf4ff; }
+    .estimate strong { color: var(--blue); font-size: 20px; }
+    .estimate p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    #effort-chart { height: 310px; width: 100%; margin-top: 10px; }
+    .table-wrap { overflow-x: auto; margin-top: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 11px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+    td code { color: var(--violet); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .tier { display: inline-block; padding: 2px 7px; border-radius: 4px; background: #eef2ff; color: #4338ca; font-size: 12px; }
+    .footnote { margin: 16px 0 0; color: var(--muted); font-size: 12px; }
+    a { color: var(--blue); }
+    @media (max-width: 820px) {
+      main { padding: 24px 16px 32px; }
+      h1 { font-size: 25px; }
+      .grid { grid-template-columns: 1fr; }
+      #price-chart { height: 350px; }
+      .panel { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>模型能力层级与 API 成本</h1>
+    <p class="lede">比较的不是未公开的内部网络结构，而是公开、可验证的模型定位、版本、推理档位、上下文和文本 token 价格。</p>
+    <p class="notice"><strong>“架构”边界：</strong>模型参数量、层数、训练数据和是否采用 MoE 均未公开。下表的“层级”是产品定位，不是对内部网络架构的推断。</p>
+
+    <section class="grid" aria-label="价格图与估算器">
+      <div class="panel">
+        <h2>文本价格对比</h2>
+        <p class="hint">单位：美元 / 百万 token。输出通常比输入贵得多；缓存输入适合复用长上下文的多轮任务。</p>
+        <div class="toolbar" aria-label="坐标轴类型">
+          <span>纵轴：</span>
+          <button type="button" data-scale="log" aria-pressed="true">对数</button>
+          <button type="button" data-scale="linear" aria-pressed="false">线性</button>
+        </div>
+        <div id="price-chart" role="img" aria-label="六个模型的输入、输出和缓存输入 API 单价柱状图"></div>
+      </div>
+
+      <aside class="panel calculator">
+        <h2>单次请求估算</h2>
+        <p class="hint">模型决定单价；推理档位决定这次预算应纳入多少 reasoning token。估算仅计算文本 token。</p>
+        <div class="form-row">
+          <label for="model-select">估算模型</label>
+          <select id="model-select" aria-label="选择估算模型"></select>
+        </div>
+        <div class="form-row">
+          <label for="effort-select">推理档位<small id="effort-note">选择模型后显示可用档位</small></label>
+          <select id="effort-select" aria-label="选择推理档位"></select>
+        </div>
+        <div class="form-row">
+          <label for="input-tokens">输入 token<small>百万 token</small></label>
+          <input id="input-tokens" type="number" min="0" step="0.01" value="1">
+        </div>
+        <div class="form-row">
+          <label for="output-tokens">可见输出<small>百万 token</small></label>
+          <input id="output-tokens" type="number" min="0" step="0.01" value="0.1">
+        </div>
+        <div class="form-row">
+          <label for="reasoning-tokens">推理输出<small>百万 token；来自 usage 明细</small></label>
+          <input id="reasoning-tokens" type="number" min="0" step="0.01" value="0">
+        </div>
+        <div class="form-row">
+          <label for="cached-tokens">缓存输入<small>百万 token</small></label>
+          <input id="cached-tokens" type="number" min="0" step="0.01" value="0">
+        </div>
+        <div class="estimate" aria-live="polite">
+          <strong id="estimate-value">$0.00</strong>
+          <p id="estimate-detail">输入、可见输出、推理输出与缓存输入分别计价。</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="panel" style="margin-top: 18px">
+      <h2>推理档位矩阵</h2>
+      <p class="hint">深色表示可用，绿色表示该模型的默认档位。`none` 表示不要求额外推理；`xhigh` 为 Extra High 的 API 名称。这里的矩阵是 API `reasoning.effort`，不是 ChatGPT / Codex 的套餐菜单。</p>
+      <div id="effort-chart" role="img" aria-label="六个模型支持的 reasoning effort 推理档位矩阵图"></div>
+    </section>
+
+    <section class="panel" style="margin-top: 18px">
+      <h2>公开规格与产品层级</h2>
+      <p class="hint">所有价格为标准 API 文本价格。上下文窗口和最大输出单位均为 token。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>模型</th><th>公开层级</th><th>版本 / API ID</th><th>上下文</th><th>推理档位</th><th>输入</th><th>输出</th><th>缓存输入</th></tr>
+          </thead>
+          <tbody id="model-rows"></tbody>
+        </table>
+      </div>
+      <p class="footnote">资料截至 2026-09-08。Astra 的缓存写入为 $12.50 / 百万 token；其余模型在这里仅比较官方模型页明确列出的缓存输入读取价。超过 272K 输入 token 的 Astra、Sol、Terra 和 Luna 请求适用不同的长上下文价格规则。</p>
+      <p class="footnote">ChatGPT / Codex 的 Instant、Medium、High、Extra High、Pro 与 Ultra 是产品界面术语，可用范围由套餐和工作区策略决定。它们不等于 API 的固定新模型或单独 token 单价；例如，Medium、High、Extra High 在 ChatGPT 中均使用 GPT-5.6 Sol。Ultra 可能使用最大推理并启动额外 agent，无法作为固定倍率估价。</p>
+      <p class="footnote">来源：<a href="https://developers.openai.com/api/docs/models/" target="_blank" rel="noopener noreferrer">模型总览</a>、<a href="https://developers.openai.com/api/docs/models/compare" target="_blank" rel="noopener noreferrer">模型对比</a>、<a href="https://developers.openai.com/api/docs/models/gpt-5.5" target="_blank" rel="noopener noreferrer">GPT-5.5</a>、<a href="https://developers.openai.com/api/docs/models/gpt-5.2" target="_blank" rel="noopener noreferrer">GPT-5.2</a>、<a href="https://help.openai.com/en/articles/20001354-gpt-5-6" target="_blank" rel="noopener noreferrer">GPT-5.6 in ChatGPT</a>。</p>
+    </section>
+  </main>
+
+  <script>
+    const effortLabels = {
+      none: "None",
+      low: "Low",
+      medium: "Medium",
+      high: "High",
+      xhigh: "Extra High",
+      max: "Max"
+    };
+    const effortOrder = Object.keys(effortLabels);
+    const models = [
+      { name: "GPT-6 Astra", id: "gpt-6-astra", tier: "最强端到端", context: "1.05M", efforts: ["low", "medium", "high", "xhigh", "max"], defaultEffort: null, input: 10, output: 50, cached: 1 },
+      { name: "GPT-5.6 Sol", id: "gpt-5.6-sol", tier: "旗舰专业工作", context: "1.05M", efforts: effortOrder, defaultEffort: "medium", input: 4, output: 20, cached: 0.4 },
+      { name: "GPT-5.6 Terra", id: "gpt-5.6-terra", tier: "能力 / 成本平衡", context: "1.05M", efforts: effortOrder, defaultEffort: "medium", input: 2, output: 12, cached: 0.2 },
+      { name: "GPT-5.6 Luna", id: "gpt-5.6-luna", tier: "高吞吐成本敏感", context: "1.05M", efforts: effortOrder, defaultEffort: "medium", input: 0.2, output: 1.2, cached: 0.02 },
+      { name: "GPT-5.5", id: "gpt-5.5", tier: "复杂专业工作", context: "1.05M", efforts: ["none", "low", "medium", "high", "xhigh"], defaultEffort: "medium", input: 5, output: 30, cached: 0.5 },
+      { name: "GPT-5.2", id: "gpt-5.2", tier: "上一代旗舰", context: "400K", efforts: ["none", "low", "medium", "high", "xhigh"], defaultEffort: "none", input: 1.75, output: 14, cached: 0.175 }
+    ];
+
+    const chart = echarts.init(document.getElementById("price-chart"));
+    const effortChart = echarts.init(document.getElementById("effort-chart"));
+    const currency = (value) => {
+      const formatted = value < 1 ? Number(value.toFixed(3)).toString() : value.toFixed(2);
+      return `$${formatted}`;
+    };
+
+    function drawChart(scale) {
+      chart.setOption({
+        animationDuration: 400,
+        color: ["#2563eb", "#b45309", "#0f766e"],
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: currency },
+        legend: { top: 8, data: ["输入", "输出", "缓存输入"] },
+        grid: { left: 58, right: 16, top: 54, bottom: 72 },
+        xAxis: { type: "category", data: models.map((model) => model.name.replace("GPT-", "")), axisLabel: { rotate: 28, interval: 0 } },
+        yAxis: {
+          type: scale === "log" ? "log" : "value",
+          min: scale === "log" ? 0.01 : 0,
+          name: "$ / 1M token",
+          axisLabel: { formatter: (value) => `$${value}` },
+          splitLine: { lineStyle: { color: "#e6eaf0" } }
+        },
+        series: [
+          { name: "输入", type: "bar", data: models.map((model) => model.input), barMaxWidth: 32 },
+          { name: "输出", type: "bar", data: models.map((model) => model.output), barMaxWidth: 32 },
+          { name: "缓存输入", type: "bar", data: models.map((model) => model.cached), barMaxWidth: 32 }
+        ]
+      }, true);
+    }
+
+    function drawEffortChart() {
+      const data = [];
+      models.forEach((model, modelIndex) => {
+        effortOrder.forEach((effort, effortIndex) => {
+          const value = model.efforts.includes(effort) ? (model.defaultEffort === effort ? 2 : 1) : 0;
+          data.push([effortIndex, modelIndex, value]);
+        });
+      });
+      effortChart.setOption({
+        animationDuration: 350,
+        tooltip: {
+          formatter: ({ value }) => {
+            const availability = value[2] === 2 ? "默认档位" : value[2] === 1 ? "支持" : "不支持";
+            return `${models[value[1]].name}<br>${effortLabels[effortOrder[value[0]]]}: ${availability}`;
+          }
+        },
+        grid: { left: 116, right: 24, top: 18, bottom: 44 },
+        xAxis: { type: "category", data: effortOrder.map((effort) => effortLabels[effort]), splitArea: { show: true } },
+        yAxis: { type: "category", data: models.map((model) => model.name), splitArea: { show: true } },
+        visualMap: {
+          type: "piecewise", orient: "horizontal", left: "center", bottom: 0,
+          pieces: [
+            { value: 0, label: "不支持", color: "#e5e7eb" },
+            { value: 1, label: "支持", color: "#2563eb" },
+            { value: 2, label: "默认", color: "#0f766e" }
+          ]
+        },
+        series: [{
+          type: "heatmap", data, label: {
+            show: true,
+            formatter: ({ value }) => value[2] === 2 ? "默认" : value[2] === 1 ? "可用" : "-",
+            color: ({ value }) => value[2] === 0 ? "#667085" : "#fff"
+          },
+          itemStyle: { borderColor: "#fff", borderWidth: 3, borderRadius: 4 }
+        }]
+      }, true);
+    }
+
+    const modelRows = document.getElementById("model-rows");
+    const modelSelect = document.getElementById("model-select");
+    const effortSelect = document.getElementById("effort-select");
+    const effortNote = document.getElementById("effort-note");
+    const reasoningInput = document.getElementById("reasoning-tokens");
+    models.forEach((model) => {
+      modelRows.insertAdjacentHTML("beforeend", `
+        <tr>
+          <td><strong>${model.name}</strong></td>
+          <td><span class="tier">${model.tier}</span></td>
+          <td><code>${model.id}</code></td>
+          <td>${model.context}</td>
+          <td>${model.efforts.map((effort) => model.defaultEffort === effort ? `${effortLabels[effort]} (默认)` : effortLabels[effort]).join(" / ")}</td>
+          <td>${currency(model.input)}</td>
+          <td>${currency(model.output)}</td>
+          <td>${currency(model.cached)}</td>
+        </tr>`);
+      modelSelect.insertAdjacentHTML("beforeend", `<option value="${model.id}">${model.name}</option>`);
+    });
+
+    function selectedModel() {
+      return models.find((item) => item.id === modelSelect.value);
+    }
+
+    function populateEfforts() {
+      const model = selectedModel();
+      effortSelect.replaceChildren();
+      model.efforts.forEach((effort) => {
+        const option = document.createElement("option");
+        option.value = effort;
+        option.textContent = model.defaultEffort === effort ? `${effortLabels[effort]} (默认)` : effortLabels[effort];
+        effortSelect.append(option);
+      });
+      effortSelect.value = model.defaultEffort || model.efforts[0];
+      effortNote.textContent = model.defaultEffort
+        ? `默认：${effortLabels[model.defaultEffort]}`
+        : "官方模型页未标注默认档位";
+      syncReasoningBudget();
+    }
+
+    function syncReasoningBudget() {
+      const hasReasoning = effortSelect.value !== "none";
+      reasoningInput.disabled = !hasReasoning;
+      if (!hasReasoning) {
+        reasoningInput.value = "0";
+      }
+    }
+
+    function valueOf(id) {
+      const value = Number(document.getElementById(id).value);
+      return Number.isFinite(value) && value >= 0 ? value : 0;
+    }
+
+    function updateEstimate() {
+      const model = selectedModel();
+      const input = valueOf("input-tokens");
+      const output = valueOf("output-tokens");
+      const reasoning = valueOf("reasoning-tokens");
+      const cached = valueOf("cached-tokens");
+      const total = input * model.input + (output + reasoning) * model.output + cached * model.cached;
+      document.getElementById("estimate-value").textContent = currency(total);
+      document.getElementById("estimate-detail").textContent =
+        `${model.name} / ${effortLabels[effortSelect.value]}: 输入 ${input}M + 输出 ${output}M + 推理 ${reasoning}M + 缓存 ${cached}M`;
+    }
+
+    document.querySelectorAll("[data-scale]").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll("[data-scale]").forEach((item) => item.setAttribute("aria-pressed", "false"));
+        button.setAttribute("aria-pressed", "true");
+        drawChart(button.dataset.scale);
+      });
+    });
+    modelSelect.addEventListener("change", () => {
+      populateEfforts();
+      updateEstimate();
+    });
+    effortSelect.addEventListener("change", () => {
+      syncReasoningBudget();
+      updateEstimate();
+    });
+    document.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", updateEstimate));
+    window.addEventListener("resize", () => {
+      chart.resize();
+      effortChart.resize();
+    });
+
+    drawChart("log");
+    drawEffortChart();
+    populateEfforts();
+    updateEstimate();
+  </script>
+</body>
+</html>
