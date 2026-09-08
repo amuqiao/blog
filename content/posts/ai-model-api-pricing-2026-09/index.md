@@ -4,7 +4,7 @@ date: 2026-09-08
 lastmod: 2026-09-08
 draft: false
 showHero: false
-description: "冻结 2026 年 9 月 OpenAI、Claude 与 DeepSeek 主力模型的 API 文本价格、缓存价格、推理档位和上下文，并用交互估算器比较单次请求成本。"
+description: "冻结 2026 年 9 月 OpenAI、Claude 与 DeepSeek 主力模型的 API 文本价格，用价格图和文本表快速比较输入、缓存与输出单价。"
 tags:
   - OpenAI
   - Claude
@@ -12,7 +12,6 @@ tags:
   - GPT
   - API
   - ECharts
-  - 模型选型
 categories:
   - AI 工程
 series:
@@ -21,52 +20,165 @@ series_order: 202609
 ---
 
 {{< lead >}}
-模型价格会变，旧价格也有参考价值。这份月报冻结 2026 年 9 月的官方 API 价格，把 OpenAI、Claude 与 DeepSeek 的主力文本模型放到同一套输入、输出、缓存和推理口径中比较。
+模型价格会变，历史价格仍有参考价值。这份月报冻结 2026 年 9 月 OpenAI、Claude 与 DeepSeek 主力文本模型的官方 API 价格，方便横向比较，也方便以后按月份回看价格变化。
 {{< /lead >}}
 
-这是一份**月度价格快照**，不是实时价格接口，也不是模型排行榜。以后价格发生变化时新增月份文章，不覆盖本期数据，才能回看同一模型何时涨价、降价或改变计费规则。
+图表和下方价格表由同一份 `pricing.json` 生成；DeepSeek 因为区分峰时与谷时，所以分别列出。
 
-本期价格截至 2026-09-08，单位为美元 / 百万文本 token。OpenAI 与 Claude 使用标准 API 价格；DeepSeek 自 2026-08-16 起区分峰时与谷时，交互页可切换两种费率。Batch、Fast、区域处理、工具调用及云厂商加价不纳入基础柱状图。
+## 价格图
 
-```text
-供应商 + 模型决定 token 单价
-推理档位影响实际推理 token、延迟与完成率
-输入 / 输出 / 缓存命中共同决定请求成本
-```
+<p id="model-pricing-meta" class="model-pricing-meta"></p>
+<div id="model-pricing-chart" class="model-pricing-chart" role="img" aria-label="AI 模型 API 价格图"></div>
 
-{{< button href="interactive.html" target="_blank" rel="noopener noreferrer" >}}打开完整对比图{{< /button >}}
+## 文本价格表
+
+<div class="model-pricing-table-wrap">
+  <table class="model-pricing-table">
+    <thead>
+      <tr>
+        <th scope="col">供应商</th>
+        <th scope="col">模型</th>
+        <th scope="col">费率</th>
+        <th scope="col">输入</th>
+        <th scope="col">缓存读取</th>
+        <th scope="col">输出</th>
+      </tr>
+    </thead>
+    <tbody id="model-pricing-table-body"></tbody>
+  </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js"></script>
+<script>
+  (async () => {
+    const response = await fetch(new URL("pricing.json", window.location.href));
+    if (!response.ok) {
+      throw new Error(`价格配置加载失败：HTTP ${response.status}`);
+    }
+
+    const pricing = await response.json();
+    const chartElement = document.getElementById("model-pricing-chart");
+    const tableBody = document.getElementById("model-pricing-table-body");
+    const meta = document.getElementById("model-pricing-meta");
+
+    chartElement.style.setProperty("--chart-height", `${pricing.chart.height}px`);
+    chartElement.style.setProperty("--chart-mobile-height", `${pricing.chart.mobileHeight}px`);
+    chartElement.setAttribute("aria-label", pricing.chart.title);
+    meta.textContent = `快照：${pricing.snapshot} · 单位：${pricing.currency} / ${pricing.unit} · 横轴：${pricing.chart.xAxisLabel}`;
+
+    for (const model of pricing.models) {
+      const row = document.createElement("tr");
+      const values = [
+        model.provider,
+        model.model,
+        model.rate,
+        `${pricing.currencySymbol}${model.input}`,
+        `${pricing.currencySymbol}${model.cachedInput}`,
+        `${pricing.currencySymbol}${model.output}`
+      ];
+
+      for (const value of values) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      }
+      tableBody.appendChild(row);
+    }
+
+    const chart = echarts.init(chartElement);
+    const labels = pricing.models.map((model) =>
+      model.rate === "标准" ? model.model : `${model.model}（${model.rate}）`
+    );
+
+    const buildOption = () => {
+      const textColor = getComputedStyle(chartElement).color;
+      return {
+        baseOption: {
+          color: ["#2563eb", "#16a34a", "#dc2626"],
+          title: { text: pricing.chart.title, left: "center", textStyle: { color: textColor } },
+          tooltip: {
+            trigger: "axis",
+            axisPointer: { type: "shadow" },
+            valueFormatter: (value) => `${pricing.currencySymbol}${value}`
+          },
+          legend: { top: 34, data: ["输入", "缓存读取", "输出"], textStyle: { color: textColor } },
+          grid: { top: 82, right: 28, bottom: 48, left: 190 },
+          xAxis: {
+            type: pricing.chart.xAxisType,
+            min: pricing.chart.minimum,
+            axisLabel: { color: textColor, formatter: `${pricing.currencySymbol}{value}` },
+            splitLine: { lineStyle: { color: "rgba(148, 163, 184, 0.28)" } }
+          },
+          yAxis: {
+            type: "category",
+            inverse: true,
+            data: labels,
+            axisLabel: { color: textColor, fontSize: 11, width: 174, overflow: "truncate" }
+          },
+          series: [
+            { name: "输入", type: "bar", data: pricing.models.map((model) => model.input) },
+            { name: "缓存读取", type: "bar", data: pricing.models.map((model) => model.cachedInput) },
+            { name: "输出", type: "bar", data: pricing.models.map((model) => model.output) }
+          ]
+        },
+        media: [{
+          query: { maxWidth: 720 },
+          option: {
+            grid: { left: 128 },
+            yAxis: { axisLabel: { fontSize: 10, width: 112 } }
+          }
+        }]
+      };
+    };
+
+    chart.setOption(buildOption());
+
+    const themeObserver = new MutationObserver(() => chart.setOption(buildOption()));
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"]
+    });
+
+    const resizeObserver = new ResizeObserver(() => chart.resize());
+    resizeObserver.observe(chartElement);
+  })();
+</script>
 
 <style>
-  .model-cost-frame { width: 100%; height: 1900px; border: 0; border-radius: 12px; overflow: hidden; background: #f6f7fb; }
-  @media (max-width: 720px) { .model-cost-frame { display: none; } }
+  .model-pricing-meta { font-size: 0.9rem; opacity: 0.72; }
+  .model-pricing-chart { width: 100%; min-width: 0; height: var(--chart-height); }
+  .model-pricing-table-wrap { width: 100%; overflow-x: auto; }
+  .model-pricing-table { width: 100%; min-width: 680px; border-collapse: collapse; }
+  .model-pricing-table th,
+  .model-pricing-table td { padding: 0.65rem 0.75rem; border-bottom: 1px solid #d0d5dd; text-align: right; white-space: nowrap; }
+  .model-pricing-table th:nth-child(-n+3),
+  .model-pricing-table td:nth-child(-n+3) { text-align: left; }
+  @media (max-width: 720px) {
+    .model-pricing-chart { height: var(--chart-mobile-height); }
+  }
 </style>
 
-<iframe class="model-cost-frame" src="interactive.html" title="2026 年 9 月 AI 模型 API 价格交互对比" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" loading="lazy"></iframe>
+## 怎么看这份价格表
 
-## 先分清三件事
+- **输入价格**：发送给模型的普通输入 token 单价。
+- **缓存读取**：重复使用已缓存上下文时的读取单价，各厂商的缓存规则并不完全相同。
+- **输出价格**：模型生成 token 的单价，通常明显高于输入价格。
 
-`Claude Opus 5`、`high` 与 DeepSeek 的“峰时”不在同一个维度：Opus 是模型，`high` 是推理投入档位，峰时是计费时段。它们必须分别建模。
+图表采用对数轴，因为最低价与最高价相差数千倍；柱子的视觉高度适合比较数量级，精确价格以文本表为准。
 
-| 维度 | 决定什么 | 是否有固定单价 |
-| --- | --- | --- |
-| 模型 | 能力定位、上下文、输入与输出 token 单价 | 有 |
-| 推理档位 | 推理深度、延迟、完成率和实际推理 token | 通常没有独立 token 单价，成本通过实际用量变化 |
-| 缓存状态 | 输入是未命中、读取缓存还是写入缓存 | 各供应商术语与费率不同 |
-| 计费时段 / 服务层 | DeepSeek 峰谷、Fast、Batch、区域处理等 | 可能直接改变单价 |
+## 比价边界
 
-推理档位本身不是可靠的价格倍率。同一个 `high` 在不同模型、不同任务上会产生不同 token 数，供应商之间也没有统一语义。预算时应从 API usage 中采集实际推理 token 或总输出 token，按任务类型统计中位数与 P90，再填入估算器。
+这份表只比较标准文本 token 单价，不做请求成本估算，也不把不同模型的能力简化成价格排名。
 
-## 结论先行
+| 未纳入基础对比的项目 | 为什么单独处理 |
+| --- | --- |
+| 推理档位 | `low`、`high` 等档位通常改变实际推理 token 和延迟，而不是提供一个固定价格倍率。 |
+| Batch、Fast 与区域处理 | 属于不同服务层或处理方式，可能另有折扣或加价。 |
+| 超长上下文 | 部分厂商会在输入超过阈值后使用另一套费率。 |
+| 工具调用与多模态 | 搜索、图像、音频等可能按次或按其他单位收费。 |
+| Claude 缓存写入 | 写入价格还与缓存 TTL 有关，本表只保留跨厂商更容易比较的缓存读取价。 |
 
-| 任务类型 | 优先考虑 | 原因 |
-| --- | --- | --- |
-| 最高能力候选 | GPT-6 Astra / Claude Fable 5.1 | 先用自己的高难任务评测完成率，再判断高单价是否减少返工。 |
-| 复杂 agent 与专业工作 | GPT-5.6 Sol / Claude Opus 5 | 适合作为能力优先但仍关注成本的起点。 |
-| 日常生产平衡 | GPT-5.6 Terra / Claude Sonnet 5 | 用代表性任务比较质量、延迟和每个成功任务成本。 |
-| 高吞吐与成本敏感 | GPT-5.6 Luna / Claude Haiku 4.5 / DeepSeek V4 Flash | 先确认低价模型能否稳定达到业务验收线。 |
-| 峰谷可调度任务 | DeepSeek V4 Flash / Pro | 谷时价格更低，适合能够延迟执行的批处理。 |
-
-这里的价格只包含文本 token。图像、网页搜索、电脑操作等工具可能单独计费；超长上下文、Batch、Fast、区域处理与第三方云平台也会改变账单。最终选型应比较**每个成功任务的总成本**，而不是只比较每百万 token 的最低数字。
+价格低不等于完成任务的总成本低。正式选型时，还需要用自己的任务集比较正确率、延迟、实际 token 消耗和返工次数。
 
 ## 数据来源
 

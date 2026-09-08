@@ -1,0 +1,30 @@
+{
+  "snapshot": "2026-09-08",
+  "currency": "USD",
+  "currencySymbol": "$",
+  "unit": "1M tokens",
+  "chart": {
+    "title": "文本 Token 单价对比",
+    "height": 620,
+    "mobileHeight": 580,
+    "xAxisType": "log",
+    "xAxisLabel": "对数刻度",
+    "minimum": 0.001
+  },
+  "models": [
+    { "provider": "OpenAI", "model": "GPT-6 Astra", "rate": "标准", "input": 10, "cachedInput": 1, "output": 50 },
+    { "provider": "OpenAI", "model": "GPT-5.6 Sol", "rate": "标准", "input": 4, "cachedInput": 0.4, "output": 20 },
+    { "provider": "OpenAI", "model": "GPT-5.6 Terra", "rate": "标准", "input": 2, "cachedInput": 0.2, "output": 12 },
+    { "provider": "OpenAI", "model": "GPT-5.6 Luna", "rate": "标准", "input": 0.2, "cachedInput": 0.02, "output": 1.2 },
+    { "provider": "OpenAI", "model": "GPT-5.5", "rate": "标准", "input": 5, "cachedInput": 0.5, "output": 30 },
+    { "provider": "OpenAI", "model": "GPT-5.2", "rate": "标准", "input": 1.75, "cachedInput": 0.175, "output": 14 },
+    { "provider": "Anthropic", "model": "Claude Fable 5.1", "rate": "标准", "input": 10, "cachedInput": 0.25, "output": 50 },
+    { "provider": "Anthropic", "model": "Claude Opus 5", "rate": "标准", "input": 5, "cachedInput": 0.5, "output": 25 },
+    { "provider": "Anthropic", "model": "Claude Sonnet 5", "rate": "标准", "input": 2, "cachedInput": 0.2, "output": 10 },
+    { "provider": "Anthropic", "model": "Claude Haiku 4.5", "rate": "标准", "input": 1, "cachedInput": 0.1, "output": 5 },
+    { "provider": "DeepSeek", "model": "DeepSeek V4 Flash", "rate": "谷时", "input": 0.22, "cachedInput": 0.007, "output": 0.66 },
+    { "provider": "DeepSeek", "model": "DeepSeek V4 Flash", "rate": "峰时", "input": 0.44, "cachedInput": 0.014, "output": 1.32 },
+    { "provider": "DeepSeek", "model": "DeepSeek V4 Pro", "rate": "谷时", "input": 0.66, "cachedInput": 0.022, "output": 1.98 },
+    { "provider": "DeepSeek", "model": "DeepSeek V4 Pro", "rate": "峰时", "input": 1.32, "cachedInput": 0.044, "output": 3.96 }
+  ]
+}
