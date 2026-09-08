@@ -74,21 +74,11 @@ Opus 5 High 的 2D 版本比较强调“骑行系统”本身：速度滑块、�
 
 {{< button href="opus-5-high-2d.html" target="_blank" rel="noopener noreferrer" >}}打开 Opus 5 High 2D{{< /button >}}
 
-<iframe
-  src="opus-5-high-2d.html"
-  title="Opus 5 High 生成的鹈鹕骑自行车 2D SVG 动画"
-  loading="lazy"
-  style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;">
-</iframe>
+<iframe src="opus-5-high-2d.html" title="Opus 5 High 生成的鹈鹕骑自行车 2D SVG 动画" loading="lazy" style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;"></iframe>
 
 {{< button href="opus-5-high-3d.html" target="_blank" rel="noopener noreferrer" >}}打开 Opus 5 High 3D{{< /button >}}
 
-<iframe
-  src="opus-5-high-3d.html"
-  title="Opus 5 High 生成的鹈鹕骑自行车 3D Three.js 场景"
-  loading="lazy"
-  style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;">
-</iframe>
+<iframe src="opus-5-high-3d.html" title="Opus 5 High 生成的鹈鹕骑自行车 3D Three.js 场景" loading="lazy" style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;"></iframe>
 
 ## DeepSeek-V4-Flash High
 
@@ -96,21 +86,11 @@ DeepSeek-V4-Flash High 的 2D 版本是纯 SVG 循环动画，界面里提供暂
 
 {{< button href="deepseek-v4-flash-high-2d.html" target="_blank" rel="noopener noreferrer" >}}打开 DeepSeek-V4-Flash High 2D{{< /button >}}
 
-<iframe
-  src="deepseek-v4-flash-high-2d.html"
-  title="DeepSeek-V4-Flash High 生成的鹈鹕骑自行车 2D SVG 动画"
-  loading="lazy"
-  style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;">
-</iframe>
+<iframe src="deepseek-v4-flash-high-2d.html" title="DeepSeek-V4-Flash High 生成的鹈鹕骑自行车 2D SVG 动画" loading="lazy" style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;"></iframe>
 
 {{< button href="deepseek-v4-flash-high-3d.html" target="_blank" rel="noopener noreferrer" >}}打开 DeepSeek-V4-Flash High 3D{{< /button >}}
 
-<iframe
-  src="deepseek-v4-flash-high-3d.html"
-  title="DeepSeek-V4-Flash High 生成的鹈鹕骑自行车 3D Three.js 场景"
-  loading="lazy"
-  style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;">
-</iframe>
+<iframe src="deepseek-v4-flash-high-3d.html" title="DeepSeek-V4-Flash High 生成的鹈鹕骑自行车 3D Three.js 场景" loading="lazy" style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;"></iframe>
 
 ## Fable 5.1 Medium
 
@@ -118,21 +98,11 @@ Fable 5.1 Medium 的 2D 版本更像一个轻量舞台：画面结构短小，�
 
 {{< button href="fable-5-1-medium-2d.html" target="_blank" rel="noopener noreferrer" >}}打开 Fable 5.1 Medium 2D{{< /button >}}
 
-<iframe
-  src="fable-5-1-medium-2d.html"
-  title="Fable 5.1 Medium 生成的鹈鹕骑自行车 2D SVG 动画"
-  loading="lazy"
-  style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;">
-</iframe>
+<iframe src="fable-5-1-medium-2d.html" title="Fable 5.1 Medium 生成的鹈鹕骑自行车 2D SVG 动画" loading="lazy" style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;"></iframe>
 
 {{< button href="fable-5-1-medium-3d.html" target="_blank" rel="noopener noreferrer" >}}打开 Fable 5.1 Medium 3D{{< /button >}}
 
-<iframe
-  src="fable-5-1-medium-3d.html"
-  title="Fable 5.1 Medium 生成的鹈鹕骑自行车 3D Three.js 场景"
-  loading="lazy"
-  style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;">
-</iframe>
+<iframe src="fable-5-1-medium-3d.html" title="Fable 5.1 Medium 生成的鹈鹕骑自行车 3D Three.js 场景" loading="lazy" style="width:100%; aspect-ratio:16 / 10; border:0; border-radius:12px; overflow:hidden; background:#0e2229;"></iframe>
 
 ## 验收清单
 

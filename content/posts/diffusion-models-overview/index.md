@@ -15,23 +15,6 @@ series:
 series_order: 1
 ---
 
-<style>
-  .diffusion-lab-frame {
-    width: 100%;
-    height: min(82vh, 900px);
-    min-height: 720px;
-    border: 0;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #f5f6f9;
-  }
-  @media (max-width: 720px) {
-    .diffusion-lab-frame {
-      display: none;
-    }
-  }
-</style>
-
 这是一份**扩散模型家族交互长卷**。它用家族地图、加噪/去噪动画、采样对比、Score/SDE 可视化、Latent 成本对比、Flow Matching 路径演示、Guidance 调节和归位测验，把扩散模型从核心直觉一路串到 Stable Diffusion 与 Sora 这类具体系统。
 
 核心阅读线索是五个变量：
@@ -44,10 +27,9 @@ series_order: 1
 
 {{< button href="interactive.html" target="_blank" rel="noopener noreferrer" >}}打开完整交互长卷{{< /button >}}
 
-<iframe
-  class="diffusion-lab-frame"
-  src="interactive.html"
-  title="扩散模型完整交互长卷"
-  sandbox="allow-scripts"
-  loading="lazy">
-</iframe>
+<style>
+  .diffusion-lab-frame { width: 100%; height: 900px; border: 0; border-radius: 12px; overflow: hidden; background: #f5f6f9; }
+  @media (max-width: 720px) { .diffusion-lab-frame { display: none; } }
+</style>
+
+<iframe class="diffusion-lab-frame" src="interactive.html" title="扩散模型完整交互长卷" sandbox="allow-scripts" loading="lazy"></iframe>
