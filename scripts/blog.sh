@@ -45,7 +45,7 @@ usage() {
   ./run.sh blog new-post my-note
 
 细节:
-  dev       执行：hugo server -D --bind "$HUGO_BIND" --port "$HUGO_PORT"
+  dev       执行：hugo server -D --bind "$HUGO_BIND" --port "$HUGO_PORT" --baseURL "$(preview_url)" --appendPort=false --renderToMemory --disableFastRender --noHTTPCache
             监听 content/config/static/assets 变化，并触发浏览器热重载。
             这不是后台常驻服务。停止时在当前终端按 Ctrl+C。
             如果当前项目已在目标端口运行，会提示已运行并成功退出。
@@ -247,7 +247,7 @@ case "$action" in
     shift
     require_hugo
     ensure_preview_port_available
-    exec hugo server -D --bind "$HUGO_BIND" --port "$HUGO_PORT" "$@"
+    exec hugo server -D --bind "$HUGO_BIND" --port "$HUGO_PORT" --baseURL "$(preview_url)" --appendPort=false --renderToMemory --disableFastRender --noHTTPCache "$@"
     ;;
   stop)
     shift
