@@ -1,25 +1,6 @@
----
-title: "把 HTML 动画发布成 Hugo 博客：从交互页到 GIF 封面"
-date: 2026-09-08
-lastmod: 2026-09-08
-draft: false
-description: "用一个鹈鹕骑自行车动画复盘完整流程：如何把本地 HTML demo 维护进 Hugo + Blowfish 博客，并用 Playwright 与 gifski 生成文章封面 GIF。"
-tags:
-  - Hugo
-  - Blowfish
-  - Playwright
-  - gifski
-  - 自动化
-categories:
-  - 博客建设
-series:
-  - 博客建设
-series_order: 2
----
+# HTML 动画生成博客 GIF 封面 Runbook
 
-{{< lead >}}
-这篇文章复盘一次完整的博客资产流水线：把一个可交互 HTML 动画放进 Hugo + Blowfish 博客，再从动画里截取片段生成 GIF 封面。
-{{< /lead >}}
+本文是本仓库的维护手册：把一个可交互 HTML demo 放进 Hugo + Blowfish 博客，并从动画里截取片段生成文章卡片 GIF 封面。
 
 先用一句话建立心智模型：
 
@@ -31,7 +12,7 @@ gifski 负责把截图合成 GIF
 Hugo + Blowfish 负责把文章、封面和交互页发布出去
 ```
 
-如果把这件事讲给一个完全没接触过静态博客的人，可以这么解释：我们不是在后台上传一篇文章，而是在仓库里维护一组文件。Markdown 负责文章入口，HTML 负责完整演示，图片和 GIF 负责让列表页、文章页看起来可读。最后 Hugo 把这些文件编译成一个可以部署到 GitHub Pages 的静态网站。
+维护时不要把这条链路理解成“上传附件”。这里维护的是一组可构建文件：Markdown 负责文章入口，HTML 负责完整演示，图片和 GIF 负责列表页与文章页展示，Hugo 负责把它们编译成 GitHub Pages 可发布的静态站点。
 
 ## 最终效果
 
@@ -63,9 +44,7 @@ Hugo + Blowfish 负责把文章、封面和交互页发布出去
   static/posts/pelican-bicycle-two-step-test/fable-5-1-medium-3d.html
 ```
 
-可以先打开成品文章：
-
-{{< button href="../pelican-bicycle-two-step-test/" target="_blank" rel="noopener noreferrer" >}}查看鹈鹕骑车测试文章{{< /button >}}
+成品文章是 `content/posts/pelican-bicycle-two-step-test/index.md`，本地预览地址是 `/blog/posts/pelican-bicycle-two-step-test/`。
 
 ## 为什么拆成两个目录
 
@@ -422,6 +401,8 @@ HUGO_PORT=1314 ./run.sh up
 
 第一条命令检查 Hugo 是否能成功构建。第二条命令检查文章和静态 demo 的 slug 映射是否一致，并拒绝发布内容引用临时素材缓存目录。
 
+发布内容不要引用仓库里的临时素材缓存目录。这个目录名写作 `.` + `data`，只用于暂存输入草稿、截图和中间产物，不属于 Hugo 构建输入。
+
 还可以手动查旧文件名是否残留：
 
 ```bash
@@ -447,14 +428,6 @@ git push origin main
 
 ```bash
 git add run.sh scripts/blog.sh scripts/capture-html-gif.mjs package.json package-lock.json
-```
-
-如果是迁移到自己的仓库，先确认三件事：
-
-```text
-GitHub Pages 的 Source 选择 GitHub Actions
-.github/workflows/hugo.yaml 已经提交
-config/_default/hugo.toml 里的 baseURL 匹配最终发布地址
 ```
 
 推送后 GitHub Actions 会构建 Hugo 站点，并发布到：

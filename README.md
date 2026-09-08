@@ -11,6 +11,8 @@
   ·
   <a href="docs/github-pages-deploy.md">部署说明</a>
   ·
+  <a href="docs/runbooks/html-animation-gif-cover.md">HTML 动画封面 Runbook</a>
+  ·
   <a href="content/posts/">文章目录</a>
   ·
   <a href=".github/workflows/hugo.yaml">GitHub Actions</a>
@@ -92,6 +94,7 @@ git submodule update --init --recursive --depth 1
 | [`assets/`](assets/) | Hugo Pipes 处理的图片和 CSS |
 | [`themes/blowfish/`](themes/blowfish/) | Blowfish 主题 submodule |
 | [`docs/`](docs/) | 仓库维护文档 |
+| [`docs/runbooks/`](docs/runbooks/) | 可复用维护流程 |
 | `public/` | 构建产物，不提交 |
 
 ## 写文章
@@ -139,6 +142,8 @@ npm install
 ```bash
 ./run.sh blog gif static/posts/<slug>/demo.html content/posts/<slug>/cover.gif
 ```
+
+完整操作流程见 [HTML 动画封面 Runbook](docs/runbooks/html-animation-gif-cover.md)。
 
 ## 部署
 
