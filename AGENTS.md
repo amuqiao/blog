@@ -17,6 +17,7 @@
 - 对“Markdown 摘要 + HTML 交互页”的文章，HTML 是正文和交互真源；Markdown 只保留 front matter、少量导语、入口按钮和 iframe。
 - Markdown 不重复维护 HTML 中的完整正文、模块目录或交互说明，避免形成两份笔记。
 - 不要在文章或配置中引用 `.data/`；`.data/` 只作为临时输入、截图或外部素材缓存，不属于 Hugo 发布内容。
+- 修改文章 slug、permalink、alias 或同名 `content` / `static` 目录后，必须清理旧 slug、旧 alias 和旧站内链接，不保留历史入口；验证站内入口只指向新 slug。
 
 ## Hugo 启动入口
 
