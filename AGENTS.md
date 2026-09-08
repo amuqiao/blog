@@ -11,6 +11,7 @@
 
 - 普通文章使用页面包：`content/posts/<post-slug>/index.md`。
 - 文章专属图片、PDF、JSON、音频、视频等页面资源，优先放在同一个页面包内：`content/posts/<post-slug>/...`。
+- 文章列表/首页卡片封面统一命名为 `cover.*`；文章页 hero 背景统一命名为 `background.*`，让 Blowfish 自动按用途识别。
 - 需要原样发布的独立 HTML demo、可直接打开的实验页面、完整前端静态小作品，放在同名静态目录：`static/posts/<post-slug>/...`。
 - `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 `<post-slug>` 必须一致，用 slug 建立一一对应关系。
 - 文章引用同名静态目录中的独立 HTML 时，优先使用同级相对路径，例如 `2d.html`、`3d.html`；构建后对应 `/posts/<post-slug>/2d.html`、`/posts/<post-slug>/3d.html`。

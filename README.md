@@ -43,6 +43,7 @@ Hugo 负责把 `content/` 构建成静态站点，Blowfish 负责页面布局、
 
 - [Hugo extended](https://gohugo.io/installation/) `0.162.0` - `0.165.0`
 - Git submodule 支持，用于拉取 [Blowfish](https://blowfish.page/) 主题
+- 可选：生成 HTML 动画预览 GIF 时需要 Node.js 20+、[Playwright](https://playwright.dev/)、Google Chrome 和 `gifski`，macOS 可用 `brew install gifski`
 
 首次克隆后拉取主题：
 
@@ -73,6 +74,7 @@ git submodule update --init --recursive --depth 1
 | `./run.sh down` | 停止当前项目的本地预览服务 |
 | `HUGO_PORT=1314 ./run.sh up` | 临时换端口启动 |
 | `./run.sh blog new-post my-post` | 创建文章页面包 |
+| `./run.sh blog gif static/posts/my-post/demo.html` | 将 HTML 动画导出为文章 GIF |
 | `./run.sh blog build` | 构建静态站点到 `public/` |
 | `./run.sh blog verify` | 发布前最小验证 |
 | `./run.sh doctor all` | 完整排障检查 |
@@ -107,6 +109,15 @@ content/posts/my-post/
 └── index.md
 ```
 
+文章专属图片和动图也放在页面包里，统一使用这两个名字：
+
+```text
+content/posts/my-post/
+├── index.md
+├── cover.gif        # 首页/列表卡片封面
+└── background.png   # 文章页顶部背景
+```
+
 交互文章采用“Markdown 发布壳 + HTML 正文真源”的方式：
 
 ```text
@@ -115,6 +126,19 @@ static/posts/<slug>/interactive.html   # 完整正文和交互内容
 ```
 
 不要在发布内容中引用 `.data/`；`.data/` 只作为临时输入、截图或素材缓存。
+
+如果 HTML demo 需要配一张动图预览，可以从 `static/posts/<slug>/` 里的 HTML 生成 GIF：
+
+```bash
+npm install
+./run.sh blog gif static/posts/<slug>/demo.html
+```
+
+需要作为封面时，显式输出为 `cover.gif`：
+
+```bash
+./run.sh blog gif static/posts/<slug>/demo.html content/posts/<slug>/cover.gif
+```
 
 ## 部署
 
