@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>鹈鹕骑车记 · three.js 3D 循环动画</title>
+<!--
+  ============================================================================
+  鹈鹕骑自行车 · 3D 低多边形卡通风循环动画（单文件，仅依赖 CDN）
+  ----------------------------------------------------------------------------
+  配色与节奏对齐 2D 参考版 deepseek-v4-flash-high-2d.html：
+    天空 #8ed2f5→#d6f1fc→#eefaff / 草地 #d3ecdc / 路面 #c6d1df + 白虚线
+    鹈鹕身体 #fffaf1（翼 #dce7e9 / 尾 #eef2ef）/ 喙 #ffb23e / 喉囊 #ff9a33
+    腿 近侧 #ff9436 / 远侧 #d97a26 / 车架珊瑚 #ff8578 / 外胎 #39424e
+    颠簸 = 每车轮一圈 2 次；齿比 车轮:曲柄 = 2.4；翅膀周期 2.4s；喙 3.6s
+  打开方式：直接用浏览器打开本文件（需联网加载 three.js CDN）。
+  CDN 备选：如 unpkg 不稳定，把下方 importmap 里的两个 URL 换成
+  https://cdn.jsdelivr.net/npm/three@0.160.0/...（同构路径，其余不变）。
+  ============================================================================
+-->
+<script>
+  /* 页面级“致命错误”提示：three.js 模块加载失败 / WebGL 不可用等，
+     立即在页面上显示原因，绝不静默黑屏。 */
+  window.__ds3Ready = false;
+  window.__ds3FatalShown = false;
+  window.__ds3Fatal = function (title, detail) {
+    if (window.__ds3FatalShown) return;   // 首个原因优先；避免后续误报覆盖真实原因
+    window.__ds3FatalShown = true;
+    var box = document.getElementById('fatal');
+    if (!box) return;
+    box.style.display = 'block';
+    document.getElementById('fatal-title').textContent = title;
+    var d = document.getElementById('fatal-detail');
+    if (d) d.textContent = detail || '';
+  };
+  window.__ds3Dismiss = function () {     // WebGL 上下文恢复等场景：撤下红框
+    var box = document.getElementById('fatal');
+    if (box) box.style.display = 'none';
+    window.__ds3FatalShown = false;
+  };
+  window.addEventListener('error', function (ev) {
+    if (window.__ds3Ready) return;            // 页面已正常初始化，不再误报
+    var m = (ev && ev.message) || '';
+    var t = (ev && ev.target && ev.target.tagName) || '';
+    if (t === 'SCRIPT' || /import|module|fetch|network|load/i.test(m)) {
+      window.__ds3Fatal('加载失败：需要联网加载 three.js（CDN 不可达？）',
+        (m && m.indexOf('Script error') !== 0) ? m : '请检查网络后刷新页面。');
+    } else if (m && m !== 'Script error.') {
+      window.__ds3Fatal('页面出错：' + m, '');
+    }
+  }, true);
+  window.addEventListener('unhandledrejection', function (ev) {
+    if (window.__ds3Ready) return;
+    var m = (ev && ev.reason && ev.reason.message) || String(ev && ev.reason);
+    window.__ds3Fatal('加载失败：three.js 模块未能加载（CDN 不可达？）', m);
+  });
+</script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+  body {
+    background: linear-gradient(180deg, #8ed2f5 0%, #d6f1fc 60%, #eefaff 100%);
+    font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  #view { position: fixed; inset: 0; display: block; }
+  canvas { display: block; width: 100%; height: 100%; }
+  /* ---------- 右上角控制浮层（与 2D 版同款胶囊按钮） ---------- */
+  .controls {
+    position: fixed; top: 12px; right: 14px;
+    display: flex; gap: 8px; z-index: 10;
+  }
+  .controls button {
+    appearance: none; border: 0; border-radius: 999px;
+    padding: 7px 15px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+    color: #fff; background: rgba(60, 120, 170, .85);
+    box-shadow: 0 2px 10px rgba(30, 80, 120, .3);
+    transition: background .15s ease, transform .1s ease;
+    font-family: inherit;
+  }
+  .controls button:hover { background: rgba(45, 100, 150, .96); }
+  .controls button:active { transform: translateY(1px); }
+  .controls button:focus-visible { outline: 2px solid #ffd75e; outline-offset: 2px; }
+  .controls button[aria-pressed="true"] { background: rgba(230, 99, 79, .9); }
+  /* ---------- 角落说明 ---------- */
+  .hint {
+    position: fixed; left: 14px; bottom: 12px; z-index: 10;
+    font-size: 12px; line-height: 1.7; color: #2e5573;
+    background: rgba(255, 255, 255, .55); padding: 6px 12px;
+    border-radius: 10px; backdrop-filter: blur(3px);
+    user-select: none; pointer-events: none;
+  }
+  .hint small { color: #5d87a3; }
+  /* ---------- 标题 ---------- */
+  .title {
+    position: fixed; left: 14px; top: 12px; z-index: 10;
+    margin: 0; font-size: 15px; font-weight: 600; color: #2e5573;
+    text-shadow: 0 1px 0 rgba(255,255,255,.6); user-select: none;
+    pointer-events: none;
+  }
+  /* ---------- 致命错误浮层 ---------- */
+  #fatal {
+    display: none; position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%); z-index: 50;
+    max-width: min(560px, 88vw); padding: 20px 24px;
+    background: rgba(120, 30, 30, .92); color: #ffe3e0;
+    border-radius: 12px; font-size: 14px; line-height: 1.6;
+    box-shadow: 0 10px 34px rgba(0,0,0,.35); text-align: center;
+  }
+  #fatal h2 { margin: 0 0 8px; font-size: 16px; color: #fff; }
+  #fatal-detail { word-break: break-all; opacity: .85; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div class="title">🚲 鹈鹕骑车记 · 3D 循环动画</div>
+<div class="controls" id="controls">
+  <button id="btn-pause" type="button" aria-pressed="true" aria-label="暂停动画">⏸ 暂停</button>
+  <button id="btn-speed" type="button" aria-pressed="false" aria-label="切换为 2 倍速度">×1 速度</button>
+</div>
+<div class="hint">🖱️ 拖拽旋转 · 滚轮缩放<br><small>three.js 0.160 · CDN 加载 · 需联网</small></div>
+<div id="fatal" role="alert">
+  <h2 id="fatal-title">发生错误</h2>
+  <div id="fatal-detail"></div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<!-- ============================================================
+     主脚本：three.js CDN + 全部程序化建模 / 光照 / 动画
+     说明：unpkg 不稳可换 jsdelivr 同构 URL（见 <head> 注释）。
+     ============================================================ -->
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ============================================================
+   §0 调参常量（动画 / 齿比 / 关键半径集中于此）
+   ============================================================ */
+const TUNE = {
+  // —— 传动 ——
+  WHEEL_R:        0.62,    // 车轮滚动半径 = 轮轴离地高度；外胎 Torus major 用 WHEEL_R−0.07，使外缘恰触地
+  GEAR_RATIO:     2.4,     // 车轮角速度 ÷ 曲柄角速度（与 2D 版一致）
+  CRANK_R:        0.30,    // 曲柄长度（曲柄臂中心到踏板中心）
+  WHEEL_RAD_S:    Math.PI, // ×1 速度下车轮角速度 rad/s → 每圈 2s（与 2D 版同节奏）
+  BOBS_PER_REV:   2,       // 每车轮一圈整车颠簸次数（2D 的 2s 周期内含两处起伏，与此一致）
+  BOB_AMP:        0.035,   // 颠簸幅度
+  HEAD_LAG_RAD:   1.9,     // 头颈摆动相对颠簸的滞后相位（rad）
+  WING_PERIOD:    2.4,     // 翅膀扇动周期 s（与 2D --t-wing 一致）
+  WING_FLAP:      0.42,    // 翅膀“扑动”量
+  BEAK_PERIOD:    3.6,     // 喙开合循环周期 s（与 2D --t-beak 一致）
+  BEAK_OPEN_W:    0.55,    // 每周期张喙窗口时长 s
+  BEAK_GAPE:      0.42,    // 张喙最大角度 rad
+  ROAD_DASH_R:    2.05,    // 内侧虚线圆环半径（行进感标线）
+  ROAD_DASH_R2:   4.85,    // 外侧虚线圆环半径
+  ROAD_INNER:     1.55,    // 环形路面内半径
+  ROAD_OUTER:     6.30,    // 环形路面外半径
+  BIKE_ORBIT_R:   3.9,     // 整车骑上环形路面：轨道中心半径（x 轴正方向，车头朝 +z）
+  CLOUD_NEAR:     0.05,    // 近层云公转 rad/s
+  CLOUD_FAR:      0.018,   // 远层云公转 rad/s
+};
+const CrankFreq = TUNE.WHEEL_RAD_S / TUNE.GEAR_RATIO; // 曲柄角速度
+const BobFreq   = TUNE.BOBS_PER_REV * TUNE.WHEEL_RAD_S; // 颠簸角速度
+// 车道圆半径：两轮接地点到环心的距离（轮距半宽 ±0.775 与 placeWheels 保持一致）
+const ROAD_LANE = Math.hypot(TUNE.BIKE_ORBIT_R, 0.775);
+
+/* ============================================================
+   §1 基础工具
+   ============================================================ */
+const UP = new THREE.Vector3(0, 1, 0);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+
+/** 在 from→to 之间生成一根圆管（单位高圆柱做 y 向拉伸 + 对齐） */
+function stick(from, to, radius, material, radialSegs = 6) {
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, 1, radialSegs),
+    material
+  );
+  poseTube(mesh, from, to);
+  return mesh;
+}
+
+/** 每帧把圆管网格摆放成 from→to（位置 + 姿态 + 长度），供动态骨骼复用 */
+function poseTube(mesh, from, to) {
+  const d = new THREE.Vector3().subVectors(to, from);
+  mesh.position.copy(from).add(to).multiplyScalar(0.5);
+  mesh.scale.set(1, Math.max(d.length(), 1e-5), 1);
+  if (d.lengthSq() > 1e-9) mesh.quaternion.setFromUnitVectors(UP, d.clone().normalize());
+}
+
+/** 低多边形圆球（可按 x/y/z 缩放） */
+function ball(radius, material, sx = 1, sy = 1, sz = 1, wSeg = 14, hSeg = 10) {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, wSeg, hSeg), material);
+  mesh.scale.set(sx, sy, sz);
+  return mesh;
+}
+
+function mat(color, opts = {}) {
+  const o = { color, flatShading: true, roughness: 0.92, metalness: 0.0, ...opts };
+  return new THREE.MeshStandardMaterial(o);
+}
+
+/* ============================================================
+   §2 渲染器 / 场景 / 相机（失败时抛出并展示原因，不静默黑屏）
+   ============================================================ */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+} catch (err) {
+  window.__ds3Fatal('WebGL 创建失败：' + (err && err.message ? err.message : err),
+    '浏览器可能禁用了 WebGL / 硬件加速。请尝试 Chrome、Edge、Firefox 或 Safari（需开启 WebGL）。');
+  throw err;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.getElementById('view').appendChild(renderer.domElement);
+
+/* 天空：竖版渐变 CanvasTexture（r160 需声明 colorSpace） */
+function makeSkyTexture() {
+  const c = document.createElement('canvas');
+  c.width = 2; c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0.00, '#8ed2f5');   // 顶部（同 2D 天空）
+  g.addColorStop(0.55, '#d6f1fc');
+  g.addColorStop(1.00, '#eefaff');   // 地平线
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+/** 软光晕（太阳周围） */
+function makeGlowTexture() {
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0.0, 'rgba(255,238,170,1)');
+  g.addColorStop(0.45, 'rgba(255,215,94,0.55)');
+  g.addColorStop(1.0, 'rgba(255,215,94,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+
+const scene = new THREE.Scene();
+scene.background = makeSkyTexture();
+const FOG_COLOR = 0xeefaff;
+scene.fog = new THREE.Fog(FOG_COLOR, 20, 72);   // 远处山丘/地面融入地平线
+
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(7.0, 2.9, 4.8);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(TUNE.BIKE_ORBIT_R, 1.05, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 2.5;
+controls.maxDistance = 45;
+controls.maxPolarAngle = Math.PI * 0.495; // 不许钻到地面以下
+controls.update();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* WebGL 上下文丢失 → 明示 */
+renderer.domElement.addEventListener('webglcontextlost', (ev) => {
+  ev.preventDefault();
+  window.__ds3Fatal('WebGL 上下文丢失', '正在尝试自动恢复，若数秒后画面未恢复请刷新页面。');
+});
+// three.js 内部会重建上下文并继续渲染；恢复成功后撤下红框
+renderer.domElement.addEventListener('webglcontextrestored', () => { window.__ds3Dismiss(); });
+
+/* ============================================================
+   §3 光照与环境
+   ============================================================ */
+// 主光：模拟太阳的定向光（带阴影）
+const sunLight = new THREE.DirectionalLight(0xfff3d6, 1.7);
+sunLight.position.set(9, 14, 7);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 40;
+sunLight.shadow.camera.left = -2.0;   // 覆盖整车车道（x≈3.9）与近处路面
+sunLight.shadow.camera.right = 8.0;
+sunLight.shadow.camera.top = 6.5;
+sunLight.shadow.camera.bottom = -4.0;
+sunLight.shadow.bias = -0.0006;
+sunLight.shadow.normalBias = 0.02;
+scene.add(sunLight);
+scene.add(sunLight.target);
+
+// 天光 + 微量环境光补暗部
+const hemi = new THREE.HemisphereLight(0xcfe8ff, 0xdfe7c8, 0.5);
+scene.add(hemi);
+scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+
+// 小太阳球 + 光晕
+const sunBody = new THREE.Mesh(
+  new THREE.SphereGeometry(0.55, 18, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffd75e })
+);
+sunBody.position.copy(sunLight.position);
+scene.add(sunBody);
+const sunGlow = new THREE.Sprite(
+  new THREE.SpriteMaterial({ map: makeGlowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+);
+sunGlow.position.copy(sunLight.position);
+sunGlow.scale.setScalar(9);
+scene.add(sunGlow);
+
+/* ============================================================
+   §4 场景装饰：草地 / 环形路面（带刻度，绕 Y 反向旋转）/ 树 / 山 / 云
+   ============================================================ */
+const scenery = {}; // 挂需要逐帧转动的引用
+
+// —— 草地大圆盘（接收阴影）——
+const groundMat = mat(0xd3ecdc);
+const ground = new THREE.Mesh(new THREE.CircleGeometry(120, 64), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// —— 环形路面组（整体反向旋转 → “前进感”）——
+scenery.roadRing = new THREE.Group(); // 绕自身 Y 旋转
+scene.add(scenery.roadRing);
+
+const asphalt = mat(0xc6d1df);
+const roadMesh = new THREE.Mesh(new THREE.RingGeometry(TUNE.ROAD_INNER, TUNE.ROAD_OUTER, 96), asphalt);
+roadMesh.rotation.x = -Math.PI / 2;
+roadMesh.position.y = 0.004;
+roadMesh.receiveShadow = true;
+scenery.roadRing.add(roadMesh);
+
+// 路缘白边（内缘 + 外缘）
+const edgeMat = mat(0xeef3f8);
+[ [TUNE.ROAD_INNER, TUNE.ROAD_INNER + 0.045],
+  [TUNE.ROAD_OUTER - 0.05, TUNE.ROAD_OUTER] ].forEach(([a, b]) => {
+  const edge = new THREE.Mesh(new THREE.RingGeometry(a, b, 96), edgeMat);
+  edge.rotation.x = -Math.PI / 2;
+  edge.position.y = 0.006;
+  scenery.roadRing.add(edge);
+});
+// 外缘下方深色包边
+const darkEdge = new THREE.Mesh(
+  new THREE.RingGeometry(TUNE.ROAD_OUTER - 0.02, TUNE.ROAD_OUTER, 96), mat(0x9fb0c2));
+darkEdge.rotation.x = -Math.PI / 2;
+darkEdge.position.y = 0.002;
+scenery.roadRing.add(darkEdge);
+
+// 白色虚线“刻度”：贴圆环切向的小圆角方块
+function addDashRing(radius, count, dashLen, dashW) {
+  const group = new THREE.Group();
+  const geo = new THREE.BoxGeometry(dashW, 0.01, dashLen); // 长边沿切向(z)
+  const dashMat = mat(0xffffff, { flatShading: false, roughness: 0.6 });
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const m = new THREE.Mesh(geo, dashMat);
+    m.position.set(Math.cos(a) * radius, 0.008, Math.sin(a) * radius);
+    m.rotation.y = -a; // 切线方向
+    group.add(m);
+  }
+  scenery.roadRing.add(group);
+}
+addDashRing(TUNE.ROAD_DASH_R,  42, 0.34, 0.12);   // 内圈：密 → 快
+addDashRing(TUNE.ROAD_DASH_R2, 64, 0.42, 0.14);   // 外圈：疏 → 慢（视差感）
+// 车道圆：半径 = 两轮接地点到环心的距离（ROAD_LANE），细虚线恰好从两轮下滚过
+addDashRing(ROAD_LANE, 56, 0.3, 0.09);
+
+// —— 近处灌木丛（半径 7.5~17，低多边形球）——
+const bushDark = mat(0x8ed49c);
+const bushLite = mat(0xa4e0b0);
+function bushAt(r, angle, s) {
+  const g = new THREE.Group();
+  const b1 = ball(0.42 * s, bushDark, 1, 0.72, 0.95, 7, 5);
+  b1.position.y = 0.30 * s;
+  b1.castShadow = true;
+  const b2 = ball(0.26 * s, bushLite, 1, 0.8, 1, 6, 4);
+  b2.position.set(0.08 * s, 0.48 * s, 0.05 * s);
+  g.add(b1, b2);
+  g.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+  scene.add(g);
+}
+for (let i = 0; i < 34; i++) {
+  const r = 7.5 + Math.random() * 9.5;
+  const a = Math.random() * Math.PI * 2;
+  bushAt(r, a, 0.8 + Math.random() * 0.9);
+}
+// —— 松树（锥体 + 树干，随机散布 12~21）——
+const pineDark = mat(0x3f9d59);
+const pineLite = mat(0x5cb772);
+const trunkMat = mat(0x8a5f3c);
+function pineAt(r, angle, s) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.075 * s, 0.5 * s, 6), trunkMat);
+  trunk.position.y = 0.25 * s;
+  const c1 = new THREE.Mesh(new THREE.ConeGeometry(0.5 * s, 0.9 * s, 7), pineDark);
+  c1.position.y = (0.5 + 0.45) * s;
+  const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.34 * s, 0.7 * s, 7), pineLite);
+  c2.position.y = (0.5 + 0.9 + 0.35) * s;
+  c1.castShadow = c2.castShadow = true;
+  g.add(trunk, c1, c2);
+  g.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+  g.rotation.y = Math.random() * Math.PI;
+  scene.add(g);
+}
+for (let i = 0; i < 16; i++) {
+  const r = 12 + Math.random() * 9;
+  pineAt(r, Math.random() * Math.PI * 2, 0.75 + Math.random() * 0.9);
+}
+// —— 远山（低多边形矮丘剪影，18~46 半径）——
+const hillMat = mat(0xb6cbd0);
+for (let i = 0; i < 9; i++) {
+  const r = 21 + Math.random() * 24;
+  const a = Math.random() * Math.PI * 2;
+  const s = 4.5 + Math.random() * 7;
+  const hill = ball(1, hillMat, s, 0.30, s * (0.9 + Math.random() * 0.6), 9, 6);
+  hill.position.set(Math.cos(a) * r, 0.5, Math.sin(a) * r);
+  hill.rotation.y = Math.random() * Math.PI;
+  scene.add(hill);
+}
+// —— 云（两组不同公转速度，绕场景中心极慢旋转）——
+const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, flatShading: false });
+function cloudGroup(count, rMin, rMax) {
+  const g = new THREE.Group();
+  for (let i = 0; i < count; i++) {
+    const blob = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), cloudMat);
+    base.scale.set(1.7, 0.55, 1);
+    blob.add(base);
+    const b2 = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 9), cloudMat);
+    b2.position.set(-1.1, 0.12, 0.15); b2.scale.set(1.0, 0.7, 0.75);
+    const b3 = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 9), cloudMat);
+    b3.position.set(1.15, 0.1, -0.1); b3.scale.set(0.9, 0.65, 0.7);
+    blob.add(b2, b3);
+    const r = rMin + Math.random() * (rMax - rMin);
+    const a = Math.random() * Math.PI * 2;
+    blob.position.set(Math.cos(a) * r, 6.5 + Math.random() * 4.5, Math.sin(a) * r);
+    g.add(blob);
+  }
+  scene.add(g);
+  return g;
+}
+scenery.cloudNear = cloudGroup(6, 13, 19);
+scenery.cloudFar  = cloudGroup(8, 22, 33);
+
+/* ============================================================
+   §5 自行车：轮子 / 车架 / 传动 / 踏板
+   坐标约定：y 上、前轮方向 +z、左右为 ±x、轮轴沿 x。
+   ============================================================ */
+const bike = new THREE.Group(); // 整车（含上下颠簸，随 bob 平移）
+bike.position.set(TUNE.BIKE_ORBIT_R, 0, 0); // 骑到环形车道上（x 正向轨道，车头朝 +z）
+scene.add(bike);
+
+const M = {
+  coral:    mat(0xff8578, { roughness: 0.55 }),        // 车架
+  coralDark:mat(0xe7634f, { roughness: 0.55 }),
+  tyre:     mat(0x39424e, { flatShading: false, roughness: 0.85 }),
+  rim:      mat(0xeef2f6, { flatShading: false, roughness: 0.35 }),
+  hub:      mat(0xd6dfe8, { flatShading: false, roughness: 0.4 }),
+  spoke:    mat(0x9fb0c4, { flatShading: false, roughness: 0.5 }),
+  valve:    new THREE.MeshBasicMaterial({ color: 0xffd75e }),
+  crank:    mat(0x39424e, { roughness: 0.6 }),
+  pedal:    mat(0x4b5561, { roughness: 0.7 }),
+  chain:    mat(0xe4ebf2, { flatShading: false, roughness: 0.35, metalness: 0.25 }),
+  bar:      mat(0x3a4350, { roughness: 0.5 }),
+  seat:     mat(0x8a5c43, { roughness: 0.85 }),
+  legNear:  mat(0xff9436, { roughness: 0.7 }),
+  legFar:   mat(0xd97a26, { roughness: 0.7 }),
+  body:     mat(0xfffaf1, { roughness: 0.9 }),
+  bodyShade:mat(0xf3ecdd, { roughness: 0.9 }),
+  wing:     mat(0xdce7e9, { roughness: 0.85 }),
+  tail:     mat(0xeef2ef, { roughness: 0.85 }),
+  bill:     mat(0xffb23e, { roughness: 0.6 }),
+  jaw:      mat(0xff9d2e, { roughness: 0.6 }),
+  pouch:    mat(0xff9a33, { roughness: 0.55 }),
+  eye:      new THREE.MeshStandardMaterial({ color: 0x2e3b4a, roughness: 0.3 }),
+  glint:    new THREE.MeshBasicMaterial({ color: 0xffffff }),
+  blush:    new THREE.MeshStandardMaterial({ color: 0xffb9ae, roughness: 1 }),
+  hand:     mat(0xe6e0d2, { roughness: 0.8 }),
+};
+
+/* ---------- 5.1 车轮（含外胎/轮圈/辐条/气门嘴，绕轴自转） ---------- */
+function buildWheel() {
+  const g = new THREE.Group();
+  const tyre = new THREE.Mesh(new THREE.TorusGeometry(TUNE.WHEEL_R - 0.07, 0.07, 14, 30), M.tyre); // 外缘 = 0.55+0.07 = 0.62 = 滚动半径（触地）
+  tyre.rotation.y = Math.PI / 2;              // 圆环平面转到 YZ（轴沿 x）
+  tyre.castShadow = true;
+  g.add(tyre);
+  const rimRing = new THREE.Mesh(new THREE.TorusGeometry(TUNE.WHEEL_R - 0.18, 0.028, 8, 24), M.rim); // 轮圈带 ≈0.41–0.47，紧贴胎内缘，可见
+  rimRing.rotation.y = Math.PI / 2;
+  g.add(rimRing);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.11, 12), M.hub);
+  hub.rotation.z = Math.PI / 2;               // 柱轴沿 x
+  g.add(hub);
+  // 6 根辐条（YZ 平面内径向）
+  const spokeCnt = 6;
+  for (let i = 0; i < spokeCnt; i++) {
+    const a = (i / spokeCnt) * Math.PI * 2 + 0.26;
+    const p1 = new THREE.Vector3(0, Math.cos(a) * 0.14, Math.sin(a) * 0.14);
+    const p2 = new THREE.Vector3(0, Math.cos(a) * (TUNE.WHEEL_R - 0.17), Math.sin(a) * (TUNE.WHEEL_R - 0.17));
+    const sp = stick(p1, p2, 0.012, M.spoke, 4);
+    g.add(sp);
+  }
+  // 气门嘴：黄色小凸起（柱轴沿 +y = 径向朝外），外端超出胎面，帮助看出“真在转”
+  const valve = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.08, 6), M.valve);
+  valve.position.set(0, TUNE.WHEEL_R + 0.015, 0);
+  g.add(valve);
+  return g;
+}
+
+const wheelGeoRef = {};
+function placeWheels() {
+  const rear = buildWheel();  rear.position.set(0, TUNE.WHEEL_R, -0.775);
+  const front = buildWheel(); front.position.set(0, TUNE.WHEEL_R, 0.775);
+  bike.add(rear, front);
+  wheelGeoRef.rear = rear; wheelGeoRef.front = front;
+}
+
+/* ---------- 5.2 车架（珊瑚色圆管 + 关节） ---------- */
+const FRAME = {
+  BB:        new THREE.Vector3(0, 0.58, 0.02),    // 中轴
+  REAR_AXLE: new THREE.Vector3(0, TUNE.WHEEL_R, -0.775),
+  FRONT_AXLE:new THREE.Vector3(0, TUNE.WHEEL_R, 0.775),
+  SEAT_LUG:  new THREE.Vector3(0, 1.02, -0.40),
+  SEAT_TOP:  new THREE.Vector3(0, 1.20, -0.46),
+  HEAD_BOT:  new THREE.Vector3(0, 0.72, 0.62),
+  HEAD_TOP:  new THREE.Vector3(0, 1.22, 0.68),
+};
+function frameTube(a, b, r, m) { bike.add(stick(a, b, r, m, 6)); }
+function buildFrame() {
+  const F = FRAME;
+  frameTube(F.BB, F.SEAT_LUG, 0.034, M.coral);      // 立管
+  frameTube(F.BB, F.HEAD_BOT, 0.034, M.coral);     // 下管
+  frameTube(F.SEAT_LUG, F.HEAD_TOP, 0.030, M.coral); // 上管
+  frameTube(F.SEAT_LUG, F.SEAT_TOP, 0.018, M.coral); // 座杆
+  frameTube(F.HEAD_BOT, F.HEAD_TOP, 0.036, M.coral); // 头管
+  frameTube(F.REAR_AXLE, F.BB, 0.026, M.coral);      // 后下叉
+  frameTube(F.REAR_AXLE, F.SEAT_LUG, 0.024, M.coral);// 后上叉
+  frameTube(F.HEAD_BOT, F.FRONT_AXLE, 0.026, M.coral); // 前叉
+  // 关节小圆珠（深珊瑚，仿 2D 的关节色）
+  const lug = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), M.coralDark);
+  lug.position.copy(F.SEAT_LUG); bike.add(lug);
+  const lug2 = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), M.coralDark);
+  lug2.position.copy(F.HEAD_BOT); bike.add(lug2);
+  // 座垫
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.05, 0.26), M.seat);
+  seat.position.copy(F.SEAT_TOP);
+  bike.add(seat);
+  // 把横 + 竖管 + 握把（前端，鹈鹕翅膀“前臂”握把处）
+  frameTube(F.HEAD_TOP, new THREE.Vector3(0, 1.26, 0.56), 0.02, M.coral);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.68, 8), M.bar);
+  bar.rotation.z = Math.PI / 2;
+  bar.position.set(0, 1.26, 0.54);
+  bike.add(bar);
+  for (const sx of [-1, 1]) {
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.1, 8), M.crank);
+    grip.rotation.z = Math.PI / 2;
+    grip.position.set(sx * 0.30, 1.26, 0.54);
+    bike.add(grip);
+  }
+}
+
+/* ---------- 5.3 传动：牙盘 + 曲柄 + 踏板（随曲柄一起转） ---------- */
+// 曲柄组挂在 FRAME.BB，绕局部 x 轴旋转 = 曲柄角
+const drivetrain = new THREE.Group();
+drivetrain.position.copy(FRAME.BB);
+bike.add(drivetrain);
+
+const chainring = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.045, 14), M.chain);
+chainring.rotation.z = Math.PI / 2;
+chainring.position.x = 0.035;
+chainring.castShadow = true;
+drivetrain.add(chainring);
+const ringLip = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.015, 6, 18), mat(0x93a4b8, { flatShading: false }));
+ringLip.rotation.y = Math.PI / 2;
+ringLip.position.x = 0.035;
+drivetrain.add(ringLip);
+
+function buildPedalAssembly(latX, signY, shoeMat) {
+  // signY = ±1：两踏板相位差 180°（局部 y = ±CRANK_R）
+  const pivot = new THREE.Group();
+  pivot.position.set(latX, signY * TUNE.CRANK_R, 0);
+  const spin = new THREE.Group();        // 反旋 → 踏板永远保持水平
+  pivot.add(spin);
+  // 踏板本体（盒体）
+  const ped = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.18), M.pedal);
+  spin.add(ped);
+  // 脚（鞋形：盒 + 鞋头圆角盒），随踏板水平；颜色与对应腿一致
+  const shoe = new THREE.Group();
+  const footBox = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.09, 0.2), shoeMat);
+  footBox.position.y = 0.062;
+  shoe.add(footBox);
+  const toe = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.06, 0.09), shoeMat);
+  toe.position.set(0, 0.045, 0.135);
+  shoe.add(toe);
+  spin.add(shoe);
+  drivetrain.add(pivot);
+  return { pivot, spin, latX, signY };
+}
+// 曲柄臂（两臂在 ±x 横向偏移，180° 对置）
+function buildCrankArm(latX, signY) {
+  const arm = new THREE.Group();
+  arm.position.x = latX;
+  const rod = stick(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, signY * TUNE.CRANK_R * 0.92, 0), 0.024, M.crank, 6);
+  arm.add(rod);
+  drivetrain.add(arm);
+}
+const pedals = {
+  A: buildPedalAssembly(+0.16, -1, M.legNear),  // 亮腿侧（x+），φ=0 时踏板在最低点
+  B: buildPedalAssembly(-0.16, +1, M.legFar),   // 暗腿侧（x−），相位差 180°
+};
+buildCrankArm(+0.10, -1);
+buildCrankArm(-0.10, +1);
+const bbCap = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), M.crank);
+drivetrain.add(bbCap);
+
+/* ============================================================
+   §6 腿部：两段骨骼（大腿/小腿）＋ 脚焊在踏板上
+   脚踝挂在“随曲柄旋转”的踏板层级上；大腿/小腿每帧做
+   髋点(H)→踝点(A) 的平面双段解算（膝恒朝前），
+   髋部钉在躯干上 → 保证“脚踩踏板、髋不脱体、左右相位差 180°”。
+   ============================================================ */
+const legMeta = {
+  near: { pedal: pedals.A, hip: new THREE.Vector3(+0.115, 1.30, -0.36), mat: M.legNear },
+  far:  { pedal: pedals.B, hip: new THREE.Vector3(-0.115, 1.30, -0.36), mat: M.legFar },
+};
+const L1 = 0.55, L2 = 0.57; // 大腿 / 小腿长（和 ≥ 最远髋踝距，留裕量）
+
+/** 由曲柄角 a 求某腿踝点（世界/整车局部坐标，脚背位置 = 踏板中心上方） */
+function ankleAt(leg, a) {
+  const s = leg.pedal.signY;              // +1 或 -1
+  const x = leg.pedal.latX;
+  const y = 0.10 + s * TUNE.CRANK_R * Math.cos(a);
+  const z = s * TUNE.CRANK_R * Math.sin(a);
+  return new THREE.Vector3(x, FRAME.BB.y + y, FRAME.BB.z + z);
+}
+
+/** 双段 IK：H 髋、A 踝、L1 大腿、L2 小腿 → 返回膝点 */
+function kneeFrom(H, A) {
+  const dVec = new THREE.Vector3().subVectors(A, H);
+  const d = Math.min(dVec.length(), L1 + L2 - 1e-4);
+  const dir = dVec.clone().normalize();
+  // 膝向外侧凸起方向：dir×X 恒落在 YZ 平面且指向前方（踝低于髋时 z>0）
+  const perp = new THREE.Vector3().crossVectors(dir, X_AXIS);
+  if (perp.lengthSq() < 1e-9) perp.set(0, 0, 1);
+  perp.normalize();
+  const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d);
+  const h = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+  return H.clone().addScaledVector(dir, a).addScaledVector(perp, h);
+}
+
+function buildLegs() {
+  for (const key of ['near', 'far']) {
+    const meta = legMeta[key];
+    // 髋关节球（固定在躯干侧）
+    const hipBall = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), meta.mat);
+    hipBall.position.copy(meta.hip);
+    bike.add(hipBall);
+    // 大腿 / 小腿（动态圆管）+ 膝球
+    const thigh = stick(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, L1, 0), 0.06, meta.mat, 6);
+    const shin  = stick(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, L2, 0), 0.048, meta.mat, 6);
+    const knee  = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), meta.mat);
+    bike.add(thigh, shin, knee);
+    legMeta[key].thigh = thigh;
+    legMeta[key].shin  = shin;
+    legMeta[key].knee  = knee;
+  }
+}
+
+/* ============================================================
+   §7 鹈鹕：身体 / 颈 / 头 / 喙+喉囊 / 翅 / 尾 / 眼
+   ============================================================ */
+const pelican = {}; // 动态引用
+
+function buildPelican() {
+  // —— 躯干（臀/胸两球体 + 渐变过度）——
+  const hipBall = ball(0.17, M.body, 1.05, 1, 1);
+  hipBall.position.set(0, 1.36, -0.36);
+  hipBall.castShadow = true;
+  bike.add(hipBall);
+  const chest = ball(0.21, M.body, 1.05, 1.08, 1.02);
+  chest.position.set(0, 1.56, -0.02);
+  chest.castShadow = true;
+  bike.add(chest);
+  // 前胸下缘阴影过度（微暖灰，仿 2D 肚皮色）
+  const belly = ball(0.17, M.bodyShade, 1.1, 0.8, 0.95);
+  belly.position.set(0, 1.27, -0.46);
+  bike.add(belly);
+
+  // —— 尾羽（后上方小扇）——
+  const tail = ball(0.1, M.tail, 1.4, 0.9, 2.6);
+  tail.position.set(0, 1.32, -0.78);
+  tail.rotation.x = -0.35;
+  bike.add(tail);
+
+  // —— 颈（3 节骨骼链：为摆动留关节；头是末端）——
+  // 颈根在前胸上沿 (0,1.78,-0.04)，两节各 (0,0.07,0.15) 前上斜出 → 头组原点 ≈ (0,1.92,0.26)
+  const neckBase = new THREE.Group(); neckBase.position.set(0, 1.78, -0.04);
+  bike.add(neckBase);
+  const SEG_V = new THREE.Vector3(0, 0.07, 0.15);
+  const n1 = new THREE.Group(); n1.position.copy(SEG_V);          // 相对 base
+  const n2 = new THREE.Group(); n2.position.copy(SEG_V);          // 相对 n1
+  const head = new THREE.Group();                                 // 相对 n2
+  neckBase.add(n1); n1.add(n2); n2.add(head);
+  n1.add(stick(new THREE.Vector3(0, 0, 0), SEG_V, 0.05, M.body, 7));
+  n2.add(stick(new THREE.Vector3(0, 0, 0), SEG_V, 0.045, M.body, 7));
+
+  // —— 头（本体）：头中心位于头组局部 HC ——
+  const HC = new THREE.Vector3(0, 0.06, 0.12);   // 头组原点 (0,1.92,0.26) → 头心世界 ≈ (0,1.98,0.38)
+  const headMesh = ball(0.155, M.body, 1.05, 1, 1.05, 18, 12);
+  headMesh.position.copy(HC);
+  headMesh.castShadow = true;
+  head.add(headMesh);
+  // 贴球面定位：给定方向返回头表面对应局部点（略突出表面）
+  const HR = 0.155 * 1.07;
+  const surfAt = (dx, dy, dz) => {
+    const d = new THREE.Vector3(dx, dy, dz).normalize();
+    return HC.clone().addScaledVector(d, HR);
+  };
+
+  // 眼睛 + 高光 + 腮红（都从“头心 + 方向”算出，保证贴面不外飘）
+  for (const sx of [-1, 1]) {
+    const eyeC = surfAt(sx * 0.55, 0.30, 0.78);
+    const dirOut = new THREE.Vector3().subVectors(eyeC, HC).normalize();
+    const eyeWhite = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), M.body);
+    eyeWhite.position.copy(eyeC);
+    head.add(eyeWhite);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.027, 8, 6), M.eye);
+    pupil.position.copy(eyeC).addScaledVector(dirOut, 0.028);
+    head.add(pupil);
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.011, 6, 4), M.glint);
+    glint.position.copy(eyeC).addScaledVector(dirOut, 0.05).add(new THREE.Vector3(0, 0.006, 0.008));
+    head.add(glint);
+    const cheek = ball(0.02, M.blush, 1, 0.85, 1);
+    cheek.position.copy(surfAt(sx * 0.62, -0.28, 0.72));
+    head.add(cheek);
+  }
+
+  // —— 喙：上喙固定；下喙 + 大喉囊整体绕喙根铰点开合 ——
+  const billRig = new THREE.Group();      // 挂在头上（喙根 = 头心前下方球面点）
+  billRig.position.copy(surfAt(0, -0.15, 0.99));
+  head.add(billRig);
+  // 上喙：从喙根向前、略向下（总长 ~0.52）
+  const billTip = new THREE.Vector3(0, -0.07, 0.52);
+  const upper = stick(new THREE.Vector3(0, 0.015, 0), billTip, 0.034, M.bill, 6);
+  billRig.add(upper);
+  // 上喙背脊深色线（仿 2D 口腔/描边细节）
+  const ridge = stick(new THREE.Vector3(0, 0.04, 0.02), new THREE.Vector3(0, -0.045, 0.5), 0.011, mat(0xe08a1a), 5);
+  billRig.add(ridge);
+
+  // 下喙 + 喉囊铰点（上喙正下方，闭喙时贴住上喙）
+  const jaw = new THREE.Group();
+  jaw.position.copy(new THREE.Vector3(0, -0.005, 0));
+  billRig.add(jaw);
+  const lower = stick(new THREE.Vector3(0, -0.02, 0), new THREE.Vector3(0, -0.09, 0.47), 0.026, M.jaw, 6);
+  jaw.add(lower);
+  // 大喉囊（辨识核心：橙黄大袋，前伸下坠，底部略低于喙根）
+  const pouch = ball(0.1, M.pouch, 1.5, 1.8, 2.0);
+  pouch.position.set(0, -0.13, 0.16);
+  jaw.add(pouch);
+  // 喉囊暗褶（一条深色圆管作褶皱阴影，增强“袋”感）
+  const wrinkle = stick(new THREE.Vector3(0, -0.10, 0.02), new THREE.Vector3(0, -0.20, 0.24), 0.012, mat(0xdd7c16), 5);
+  jaw.add(wrinkle);
+
+  pelican.neck1 = n1;
+  pelican.neck2 = n2;
+  pelican.head = head;
+  pelican.jaw = jaw;
+
+  // —— 翅膀：两段骨骼（肩→肘→握把），肘点绕“肩-把”连线小幅摆动（慢速扑动），手始终在握把 ——
+  const shoulder = new THREE.Vector3(0.19, 1.63, 0.04);
+  const grips = {
+    R: new THREE.Vector3(0.30, 1.26, 0.54),   // +x 侧（鸟的左手/翼）
+    L: new THREE.Vector3(-0.30, 1.26, 0.54),
+  };
+  function buildWing(sideSign) {
+    const rig = {
+      sign: sideSign,
+      shoulder: new THREE.Vector3(sideSign * shoulder.x, shoulder.y, shoulder.z),
+      grip: sideSign > 0 ? grips.R : grips.L,
+    };
+    rig.axis = new THREE.Vector3().subVectors(rig.grip, rig.shoulder).normalize();
+    rig.mid  = new THREE.Vector3().addVectors(rig.shoulder, rig.grip).multiplyScalar(0.5);
+    // 肘的旋转基底：w 为“肩→把”连线的垂直方向里偏上的一方
+    rig.w = new THREE.Vector3().crossVectors(rig.axis, X_AXIS).normalize();
+    if (rig.w.y < 0) rig.w.multiplyScalar(-1);          // 取偏上
+    rig.u = new THREE.Vector3().crossVectors(rig.w, rig.axis).normalize();
+    rig.R = 0.17;                                        // 肘绕连线半径
+    rig.a0 = -0.9;                                       // 肘自然下垂的起始角
+    // 肩关节 + 上臂/前臂圆管 + 肘球 + 手（握把）
+    const shoulderBall = ball(0.085, M.body, 1, 1, 1);
+    shoulderBall.position.copy(rig.shoulder);
+    rig.thigh = stick(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.35, 0), 0.075, M.wing, 7);
+    rig.fore  = stick(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.35, 0), 0.066, M.wing, 7);
+    rig.elbowBall = new THREE.Mesh(new THREE.SphereGeometry(0.075, 8, 6), M.hand);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.062, 8, 6), M.hand);
+    hand.position.copy(rig.grip);
+    bike.add(shoulderBall, rig.thigh, rig.fore, rig.elbowBall, hand);
+    return rig;
+  }
+  pelican.wingR = buildWing(+1);
+  pelican.wingL = buildWing(-1);
+}
+
+/* 翅膀肘点由相位角算出，并摆放上臂/前臂 */
+function poseWing(rig, t) {
+  const flap = TUNE.WING_FLAP * Math.sin((2 * Math.PI / TUNE.WING_PERIOD) * t + (rig.sign > 0 ? 0 : Math.PI * 0.5));
+  const a = rig.a0 + flap;
+  const elbow = rig.mid.clone()
+    .addScaledVector(rig.w, Math.cos(a) * rig.R)
+    .addScaledVector(rig.u, Math.sin(a) * rig.R);
+  poseTube(rig.thigh, rig.shoulder, elbow);
+  poseTube(rig.fore, elbow, rig.grip);
+  rig.elbowBall.position.copy(elbow);
+}
+
+/* 双段 IK 腿部摆位 */
+function poseLeg(meta, a) {
+  const ankle = ankleAt(meta, a);
+  const knee = kneeFrom(meta.hip, ankle);
+  poseTube(meta.thigh, meta.hip, knee);
+  poseTube(meta.shin, knee, ankle);
+  meta.knee.position.copy(knee);
+}
+
+/* ============================================================
+   §8 构建组装
+   ============================================================ */
+placeWheels();
+buildFrame();
+buildLegs();
+buildPelican();
+// 整车所有可见网格统一投射阴影（草地/路面接收）
+bike.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+
+/* ============================================================
+   §9 动画主循环
+   统一主时间 master（秒，×speed 累积）；暂停 = 时间冻结、仍持续渲染。
+   所有运动均为 master 的解析函数 → 变速/暂停/恢复均连续无缝。
+   ============================================================ */
+const clock = new THREE.Clock();
+let master = 0;                 // 动画主时间（不含倍速与暂停）
+let playing = !window.matchMedia('(prefers-reduced-motion: reduce)').matches; // 尊重减弱动态偏好
+let speed = 1;                  // ×1 / ×2
+
+function crankAngleNow()  { return master * CrankFreq + 0.35; }
+function wheelAngleNow()  { return master * TUNE.WHEEL_RAD_S; }
+
+function drawScene() {
+  const crankA = crankAngleNow();
+  const wheelA = wheelAngleNow();
+
+  // 车轮自转（前后同向）
+  wheelGeoRef.rear.rotation.x = wheelA;
+  wheelGeoRef.front.rotation.x = wheelA;
+
+  // 传动：曲柄 = 车轮 ÷ 2.4
+  drivetrain.rotation.x = crankA;
+  pedals.A.spin.rotation.x = -crankA;   // 踏板保持水平
+  pedals.B.spin.rotation.x = -crankA;
+
+  // 整车颠簸：每车轮一圈 2 次
+  const bob = TUNE.BOB_AMP * Math.sin(BobFreq * master + 0.4);
+  bike.position.y = bob;
+  bike.rotation.x = 0.012 * Math.sin(BobFreq * master + 0.4 + Math.PI / 2); // 轻微俯仰
+
+  // 腿（脚在踏板上，髋不动）
+  poseLeg(legMeta.near, crankA);
+  poseLeg(legMeta.far, crankA);
+
+  // 头颈：带滞后相位（相对颠簸）的摆动，2 节关节分摊；头再带轻微点头
+  const headSway = 0.11 * Math.sin(BobFreq * master - TUNE.HEAD_LAG_RAD);
+  pelican.neck1.rotation.x = headSway * 0.55;
+  pelican.neck2.rotation.x = headSway * 0.45;
+  pelican.head.rotation.x = 0.05 * Math.sin(BobFreq * master - TUNE.HEAD_LAG_RAD * 0.6);
+
+  // 喙：周期性短促开合（窗口包络，C1 连续）
+  const be = beakEnv(master);
+  pelican.jaw.rotation.x = TUNE.BEAK_GAPE * be;
+
+  // 翅膀：慢速扇动（手不离把）
+  poseWing(pelican.wingR, master);
+  poseWing(pelican.wingL, master);
+
+  // 环形路面整体旋转（模拟行进）。整车骑在车道圆（半径 ROAD_LANE）上：路面刚性
+  // 旋转，其在两轮接地点处的线速度恰等于触地线速度 → 虚线从轮下无缝滚过。
+  const groundSpeed = TUNE.WHEEL_RAD_S * TUNE.WHEEL_R;      // ≈ 触地线速度
+  scenery.roadRing.rotation.y = (groundSpeed / ROAD_LANE) * master;
+  // 云：两组慢速公转
+  scenery.cloudNear.rotation.y = -TUNE.CLOUD_NEAR * master;
+  scenery.cloudFar.rotation.y = -TUNE.CLOUD_FAR * master;
+}
+
+/** 喙开合窗口包络：每 BEAK_PERIOD 秒张开 BEAK_OPEN_W 秒（0→峰→0，导数连续） */
+function beakEnv(t) {
+  const per = TUNE.BEAK_PERIOD, w = TUNE.BEAK_OPEN_W;
+  const u = ((t % per) + per) % per;
+  if (u > w) return 0;
+  return 0.5 * (1 - Math.cos((2 * Math.PI * u) / w));
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.05);   // 切后台回来不跳变
+  if (playing) master += dt * speed;
+  drawScene();
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ---------- UI：暂停 / 倍速 ---------- */
+const btnPause = document.getElementById('btn-pause');
+const btnSpeed = document.getElementById('btn-speed');
+function syncButtons() {
+  btnPause.textContent = playing ? '⏸ 暂停' : '▶ 播放';
+  btnPause.setAttribute('aria-pressed', String(playing));
+  btnSpeed.textContent = '×' + speed + ' 速度';
+  btnSpeed.setAttribute('aria-pressed', String(speed === 2));
+}
+btnPause.addEventListener('click', () => {
+  playing = !playing;
+  syncButtons();
+});
+btnSpeed.addEventListener('click', () => {
+  speed = speed === 1 ? 2 : 1;
+  syncButtons();
+});
+syncButtons();
+
+/* 首帧静态绘制成功后，才标记初始化完成（此前任何异常都会弹红框，不静默） */
+try {
+  drawScene();                        // 先画一帧静态（含暂停初始态）
+} catch (err) {
+  window.__ds3Fatal('初始化绘制失败：' + ((err && err.message) || err), '请刷新页面重试。');
+  throw err;
+}
+window.__ds3Ready = true;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

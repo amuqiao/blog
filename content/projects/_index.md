@@ -14,7 +14,7 @@ showWordCount: false
 用交互动画理解 DDPM、DDIM、Score/SDE、Latent Diffusion、Flow Matching 和 Guidance。
 {{< /feature >}}
 
-{{< feature icon="code" title="鹈鹕骑车模型测试" url="/blog/posts/opus-5-high-pelican-bicycle-two-step-test/" label="阅读" >}}
+{{< feature icon="code" title="鹈鹕骑车模型测试" url="/blog/posts/pelican-bicycle-two-step-test/" label="阅读" >}}
 用 2D SVG 动画和 Three.js 场景测试模型是否能把离谱需求拆成可验证资产。
 {{< /feature >}}
 

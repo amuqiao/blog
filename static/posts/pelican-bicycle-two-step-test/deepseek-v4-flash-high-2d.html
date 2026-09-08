@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>鹈鹕骑车记 · 纯 SVG 循环动画</title>
+<style>
+  /* ============================================================
+     页面布局（零外部依赖，纯内联）——动画时长统一用 --t-* 基础变量，
+     再由 --speed 倍速统一缩放：duration = calc(var(--t-*) / var(--speed))。
+     ============================================================ */
+  :root {
+    --speed: 1;                 /* 1x 或 2x，由右下按钮切换 */
+    /* --- 基础时长（1x 下的秒数）--- */
+    --t-wheel: 2s;              /* 车轮绕轴一整圈 */
+    --t-bob: 2s;                /* 整车/鹈鹕上下颠簸一周期（每圈两处颠簸） */
+    --t-crank: 4.8s;            /* 曲柄一圈：车轮/曲柄 ≈ 2.4 齿比 */
+    --t-road: 6.72s;            /* 路标平移 1140px：触地半径 54（轴 y396→路面顶 y450），车轮每圈 2s 应退 2π·54≈339.3px，故 1140px 需 6.72s */
+    --t-head: 2s;               /* 头颈滞后晃动周期（相位相对颠簸后移 35%） */
+    --t-wing: 2.4s;             /* 翅膀慢扇一周期 */
+    --t-beak: 3.6s;             /* 喙开合一个循环 */
+    --t-dust: 2.8s;             /* 尘土粒子一个循环 */
+    --t-cloud-far: 110s;
+    --t-cloud-mid: 76s;
+    --t-cloud-near: 56s;
+    --t-hill-far: 66.7s;        /* 远山带平移 2400px（慢，视差远层） */
+    --t-hill-near: 21s;         /* 近树丛带平移 2080px（快，视差近层） */
+    --t-sunrays: 90s;           /* 太阳光芒极慢公转 */
+  }
+  body.fast { --speed: 2; }     /* 2x：所有动画时长按比例减半 */
+
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: linear-gradient(180deg, #e3f4fd 0%, #fdfefc 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: auto;
+    font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  header { text-align: center; color: #4b7a9b; margin: 18px 0 4px; }
+  header h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  header p  { margin: 4px 0 0; font-size: 12.5px; color: #7ba3bd; }
+
+  .stage {
+    position: relative;
+    margin: 12px auto 28px;
+    width: 960px;              /* 与 SVG viewBox 等比，避免任何 CSS 缩放 */
+    border-radius: 14px;
+    box-shadow: 0 12px 30px rgba(70, 130, 180, .18);
+    overflow: hidden;
+    background: #cfeafa;
+  }
+  .stage svg { display: block; width: 960px; height: 520px; }
+
+  /* ---------- 右上角控制浮层 ---------- */
+  .controls {
+    position: absolute; top: 10px; right: 10px;
+    display: flex; gap: 8px; z-index: 5;
+  }
+  .controls button {
+    appearance: none;
+    border: 0; border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    color: #fff;
+    background: rgba(60, 120, 170, .82);
+    box-shadow: 0 2px 8px rgba(30, 80, 120, .25);
+    transition: background .15s ease, transform .1s ease;
+  }
+  .controls button:hover { background: rgba(45, 100, 150, .95); }
+  .controls button:active { transform: translateY(1px); }
+  .controls button:focus-visible { outline: 2px solid #ffd75e; outline-offset: 2px; }
+
+  /* ---------- 动画暂停机制：body.paused 让全部 .anim 冻结 ---------- */
+  .anim { will-change: transform; }
+  body.paused .anim { animation-play-state: paused; }
+
+  /* 尊重系统的“减弱动态”偏好：默认全部静止；用户显式点“播放”则放行 */
+  @media (prefers-reduced-motion: reduce) {
+    .anim { animation-play-state: paused; }
+    body.user-motion .anim { animation-play-state: running !important; }
+  }
+
+  /* ============================================================
+     关键帧（全部基于 transform / opacity，无逐帧 left/top）
+     ============================================================ */
+  @keyframes spin         { to { transform: rotate(360deg); } }
+  @keyframes spinRev      { to { transform: rotate(-360deg); } }
+
+  /* 颠簸：模拟每圈两处小起伏的正弦感（0-50-100 平滑回环） */
+  @keyframes bob {
+    0%    { transform: translateY(0); }
+    12.5% { transform: translateY(-2px); }
+    25%   { transform: translateY(-3px); }
+    37.5% { transform: translateY(-2px); }
+    50%   { transform: translateY(0); }
+    62.5% { transform: translateY(-2px); }
+    75%   { transform: translateY(-3px); }
+    87.5% { transform: translateY(-2px); }
+    100%  { transform: translateY(0); }
+  }
+
+  /* 头颈滞后晃动（绕颈部根部小幅度摆动，衰减式） */
+  @keyframes sway {
+    0%   { transform: rotate(0deg); }
+    20%  { transform: rotate(-2.6deg); }
+    55%  { transform: rotate(2.2deg); }
+    78%  { transform: rotate(-1deg); }
+    100% { transform: rotate(0deg); }
+  }
+
+  /* 短翅缓慢扇动 */
+  @keyframes wingBeat {
+    0%   { transform: rotate(-3deg); }
+    25%  { transform: rotate(16deg); }
+    50%  { transform: rotate(-18deg); }
+    75%  { transform: rotate(10deg); }
+    100% { transform: rotate(-3deg); }
+  }
+
+  /* 喙开合：84% 前合拢 → 短促开 6.5° → 96% 合拢，循环无缝 */
+  @keyframes beakOpen {
+    0%, 84%  { transform: rotate(0deg); }
+    90%      { transform: rotate(6.5deg); }
+    96%, 100%{ transform: rotate(0deg); }
+  }
+
+  /* 尘土：上扬并向后（左）飘散 */
+  @keyframes dustRise {
+    from { transform: translate(0, 0); }
+    to   { transform: translate(-24px, -40px); }
+  }
+  @keyframes puffFade {
+    0%  { opacity: 0; }
+    10% { opacity: .8; }
+    45% { opacity: .5; }
+    100%{ opacity: 0; }
+  }
+
+  /* 背景平移：整条长带向左滑过 --P px 后回到起点（带长 = P + 视口宽，图案按周期排布 → 无缝） */
+  @keyframes scrollFar  { to { transform: translateX(-2400px); } } /* 远山带（=3×800px 图案周期） */
+  @keyframes scrollNear { to { transform: translateX(-2080px); } } /* 近树带（=2×1040px 图案周期） */
+  @keyframes roadScroll { to { transform: translateX(-1140px); } } /* 路标：= 车轮前进距离/圈 */
+
+  /* 云朵：从左侧外进入、右侧外离开（出屏后回到屏外起点，无可视跳变） */
+  @keyframes cloudDrift {
+    from { transform: translateX(-340px); }
+    to   { transform: translateX(1240px); }
+  }
+
+  /* ============================================================
+     动画接线：所有 duration/delay 都由基础变量 ÷ --speed 推导
+     ============================================================ */
+  .wheel-spin  { animation: spin      calc(var(--t-wheel) / var(--speed)) linear infinite; }
+  .crank-spin  { animation: spin      calc(var(--t-crank) / var(--speed)) linear infinite; }
+  .rider-bob   { animation: bob       calc(var(--t-bob)   / var(--speed)) linear infinite; }
+  .road-scroll { animation: roadScroll calc(var(--t-road) / var(--speed)) linear infinite; }
+  .far-scroll  { animation: scrollFar  calc(var(--t-hill-far)  / var(--speed)) linear infinite; }
+  .near-scroll { animation: scrollNear calc(var(--t-hill-near) / var(--speed)) linear infinite; }
+  .wing-flap   { animation: wingBeat  calc(var(--t-wing) / var(--speed)) linear infinite; }
+  .head-sway   {
+    animation: sway calc(var(--t-head) / var(--speed)) linear infinite;
+    animation-delay: calc(var(--t-head) / var(--speed) * -0.35); /* 相对车身颠簸滞后 */
+  }
+  .beak-open   { animation: beakOpen  calc(var(--t-beak) / var(--speed)) linear infinite; }
+  .sun-rays    { animation: spinRev   calc(var(--t-sunrays) / var(--speed)) linear infinite; }
+
+  .cloud-a { animation: cloudDrift calc(var(--t-cloud-far)  / var(--speed)) linear infinite;
+             animation-delay: calc(var(--t-cloud-far)  / var(--speed) * -0.12); }
+  .cloud-b { animation: cloudDrift calc(var(--t-cloud-mid)  / var(--speed)) linear infinite;
+             animation-delay: calc(var(--t-cloud-mid)  / var(--speed) * -0.45); }
+  .cloud-c { animation: cloudDrift calc(var(--t-cloud-near) / var(--speed)) linear infinite;
+             animation-delay: calc(var(--t-cloud-near) / var(--speed) * -0.70); }
+
+  .dust-rise { animation: dustRise calc(var(--t-dust) / var(--speed)) linear infinite; }
+  .puff-fade { animation: puffFade calc(var(--t-dust) / var(--speed)) linear infinite; }
+  .puff-d1 { animation-delay: calc(var(--t-dust) / var(--speed) * -0.0); }
+  .puff-d2 { animation-delay: calc(var(--t-dust) / var(--speed) * -0.93); }
+  .puff-d3 { animation-delay: calc(var(--t-dust) / var(--speed) * -1.86); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🐦 鹈鹕骑车记 · Pelican on a Bike</h1>
+  <p>纯手绘内联 SVG 循环动画 —— 辐条、曲柄踏板、视差山丘、颠簸与尘土</p>
+</header>
+
+<div class="stage">
+  <div class="controls">
+    <button id="btnPlay" type="button" aria-label="播放或暂停动画" aria-pressed="false">⏸ 暂停</button>
+    <button id="btnSpeed" type="button" aria-label="切换动画速度" aria-pressed="false">速度 ×1</button>
+  </div>
+
+  <!-- ==================================================================
+       SVG 场景：viewBox 960×520；所有动画元素带 class="anim"，
+       旋转类元素显式给出 transform-box:view-box + 用户坐标 px 支点。
+       ================================================================== -->
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520"
+       role="img" aria-label="一只大喙鹈鹕骑着自行车在绿野上行驶的循环动画">
+    <defs>
+      <!-- 天空渐变 -->
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0"  stop-color="#8ed2f5"/>
+        <stop offset="0.55" stop-color="#d6f1fc"/>
+        <stop offset="1"  stop-color="#eefaff"/>
+      </linearGradient>
+      <!-- 阳光渐晕 -->
+      <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+        <stop offset="0"  stop-color="#ffe9a1"/>
+        <stop offset="0.6" stop-color="#ffd75e" stop-opacity="0.55"/>
+        <stop offset="1"  stop-color="#ffd75e" stop-opacity="0"/>
+      </radialGradient>
+      <!-- 太阳光芒单元 -->
+      <g id="ray"><line x1="118" y1="50" x2="118" y2="34" stroke="#ffce4d" stroke-width="5" stroke-linecap="round"/></g>
+
+      <!-- 云朵造型 -->
+      <g id="cloudShape">
+        <rect x="-16" y="2" width="70" height="15" rx="7.5" fill="#fff"/>
+        <circle cx="0"  cy="2"  r="14" fill="#fff"/>
+        <circle cx="17" cy="-9" r="18" fill="#fff"/>
+        <circle cx="37" cy="0"  r="13" fill="#fff"/>
+      </g>
+
+      <!-- ============ 近层树丛四连造型（每格 260px，四格一周期 = 1040px）============ -->
+      <g id="nr0"><!-- 大圆灌丛 -->
+        <ellipse cx="130" cy="600" rx="142" ry="198" fill="#8ed49c"/>
+        <ellipse cx="92"  cy="500" rx="66"  ry="88"  fill="#a4e0b0" opacity="0.75"/>
+      </g>
+      <g id="nr1"><!-- 灌丛 + 高松树 -->
+        <ellipse cx="130" cy="600" rx="142" ry="190" fill="#8ed49c"/>
+        <rect x="125" y="404" width="10" height="52" fill="#8a5f3c"/>
+        <path d="M130 330 L168 408 L92 408 Z" fill="#3f9d59"/>
+        <path d="M130 358 L156 404 L104 404 Z" fill="#5cb772"/>
+      </g>
+      <g id="nr2"><!-- 双鼓包灌丛 -->
+        <ellipse cx="130" cy="600" rx="142" ry="195" fill="#8ed49c"/>
+        <ellipse cx="80"  cy="492" rx="60"  ry="92"  fill="#a4e0b0" opacity="0.8"/>
+        <ellipse cx="186" cy="516" rx="52"  ry="78"  fill="#a4e0b0" opacity="0.8"/>
+      </g>
+      <g id="nr3"><!-- 低灌丛 + 小松树 -->
+        <ellipse cx="130" cy="600" rx="142" ry="196" fill="#8ed49c"/>
+        <ellipse cx="150" cy="512" rx="58"  ry="80"  fill="#a4e0b0" opacity="0.75"/>
+        <rect x="84" y="428" width="9" height="34" fill="#8a5f3c"/>
+        <path d="M88 386 L112 430 L64 430 Z" fill="#3f9d59"/>
+        <path d="M88 406 L106 428 L70 428 Z" fill="#5cb772"/>
+      </g>
+
+      <!-- ============ 车轮几何（以 0,0 为轮心，供 <use> 平移复用） ============ -->
+      <g id="wheelGeom">
+        <circle r="54" fill="none" stroke="#39424e" stroke-width="7"/>            <!-- 外胎 -->
+        <circle r="50" fill="none" stroke="#55606f" stroke-width="1.4"/>          <!-- 胎压边 -->
+        <circle r="48" fill="none" stroke="#eef2f6" stroke-width="3"/>            <!-- 轮圈 -->
+        <circle cx="47" cy="0" r="2.4" fill="#ffd75e"/>                           <!-- 气门嘴：可看出车轮真转 -->
+        <!-- 8 根辐条（一条 path，轴对称） -->
+        <path fill="none" stroke="#9fb0c4" stroke-width="1.6"
+          d="M-45 0 L45 0 M-41.6 -17.2 L41.6 17.2 M-31.8 -31.8 L31.8 31.8
+             M-17.2 -41.6 L17.2 41.6 M0 -45 L0 45 M17.2 -41.6 L-17.2 41.6
+             M31.8 -31.8 L-31.8 31.8 M41.6 -17.2 L-41.6 17.2"/>
+        <circle r="6" fill="#d6dfe8" stroke="#a7b6c4" stroke-width="1"/>          <!-- 花鼓 -->
+      </g>
+
+      <!-- ============ 曲柄 + 踏板 + 腿/脚组件（相位 0 朝前水平，绝对坐标） ============
+           近/远两侧各 <use> 一次：远侧外层再静态 rotate(180)，即错开半圈；
+           整体绕中轴 (326,407) 匀速旋转，角度速度一致、相位互补。 -->
+      <g id="crankGeom">
+        <path d="M326 407 L352 407" stroke="#39424e" stroke-width="6" stroke-linecap="round"/> <!-- 曲柄臂 -->
+        <rect x="343.5" y="403" width="18" height="6.6" rx="3.2" fill="#4b5561" stroke="#2f3742" stroke-width="1"/> <!-- 脚踏板 -->
+        <path d="M329 407 C 336 404 341 401 345 399" fill="none" stroke="var(--leg,#ff9436)" stroke-width="6.5" stroke-linecap="round"/> <!-- 大腿/小腿 -->
+        <path d="M342 399 C 345 391 353 388 362 391.5 C 366 393 367 397 363 399.5 C 357 402.5 348 402.5 343 400 Z"
+              fill="var(--leg,#ff9436)" stroke="var(--legstroke,#cf6f1c)" stroke-width="1.2"/> <!-- 脚 -->
+        <path d="M357 392.5 L356.5 398 M350.5 393.5 L350 399" stroke="#d97a1f" stroke-width="0.9"/> <!-- 趾缝 -->
+        <circle cx="326" cy="407" r="4" fill="#39424e" stroke="#5a6573" stroke-width="1.2"/>  <!-- 中轴盖 -->
+      </g>
+    </defs>
+
+    <!-- ########## 背景：天空 / 太阳 / 云 ########## -->
+    <g id="bg-sky">
+      <rect x="0" y="0" width="960" height="520" fill="url(#sky)"/>
+      <!-- 太阳与光芒 -->
+      <g id="sun">
+        <circle cx="118" cy="96" r="52" fill="url(#sunGlow)"/>
+        <circle cx="118" cy="96" r="30" fill="#ffd75e" stroke="#ffc93d" stroke-width="3"/>
+        <circle cx="110" cy="88" r="7" fill="#ffe9a1" opacity="0.9"/> <!-- 高光 -->
+        <g id="sun-rays" class="anim sun-rays" style="transform-origin:118px 96px; transform-box:view-box;">
+          <use href="#ray"/>
+          <use href="#ray" transform="rotate(45,118,96)"/>
+          <use href="#ray" transform="rotate(90,118,96)"/>
+          <use href="#ray" transform="rotate(135,118,96)"/>
+          <use href="#ray" transform="rotate(180,118,96)"/>
+          <use href="#ray" transform="rotate(225,118,96)"/>
+          <use href="#ray" transform="rotate(270,118,96)"/>
+          <use href="#ray" transform="rotate(315,118,96)"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- 云朵：三朵不同高度/速度、错开相位 -->
+    <g id="clouds">
+      <g transform="translate(150,95) scale(0.9)"><g class="anim cloud-a"><use href="#cloudShape"/></g></g>
+      <!-- b/c 的 Tx 须使回卷起点（translateX=-340px）整朵出屏左缘：Tx ≤ 286×scale，否则每周期在屏内闪现 -->
+      <g transform="translate(320,58) scale(1.2)"><g class="anim cloud-b"><use href="#cloudShape"/></g></g>
+      <g transform="translate(200,140) scale(0.75)"><g class="anim cloud-c"><use href="#cloudShape"/></g></g>
+    </g>
+
+    <!-- ########## 视差层：远山（慢） ##########
+         无缝原理：等高圆链按 160px 等距排布、半径按 5 元循环（图案周期 800px），
+         整带一次平移 -2400px（= 3×周期），画面帧首尾一致。底部被路面盖住。 -->
+    <g id="layer-hills-far" class="anim far-scroll">
+      <circle cx="-60"  cy="520" r="104" fill="#d3ecdc"/>
+      <circle cx="100"  cy="520" r="114" fill="#d3ecdc"/>
+      <circle cx="260"  cy="520" r="107" fill="#d3ecdc"/>
+      <circle cx="420"  cy="520" r="117" fill="#d3ecdc"/>
+      <circle cx="580"  cy="520" r="103" fill="#d3ecdc"/>
+      <circle cx="740"  cy="520" r="104" fill="#d3ecdc"/>
+      <circle cx="900"  cy="520" r="114" fill="#d3ecdc"/>
+      <circle cx="1060" cy="520" r="107" fill="#d3ecdc"/>
+      <circle cx="1220" cy="520" r="117" fill="#d3ecdc"/>
+      <circle cx="1380" cy="520" r="103" fill="#d3ecdc"/>
+      <circle cx="1540" cy="520" r="104" fill="#d3ecdc"/>
+      <circle cx="1700" cy="520" r="114" fill="#d3ecdc"/>
+      <circle cx="1860" cy="520" r="107" fill="#d3ecdc"/>
+      <circle cx="2020" cy="520" r="117" fill="#d3ecdc"/>
+      <circle cx="2180" cy="520" r="103" fill="#d3ecdc"/>
+      <circle cx="2340" cy="520" r="104" fill="#d3ecdc"/>
+      <circle cx="2500" cy="520" r="114" fill="#d3ecdc"/>
+      <circle cx="2660" cy="520" r="107" fill="#d3ecdc"/>
+      <circle cx="2820" cy="520" r="117" fill="#d3ecdc"/>
+      <circle cx="2980" cy="520" r="103" fill="#d3ecdc"/>
+      <circle cx="3140" cy="520" r="104" fill="#d3ecdc"/>
+      <circle cx="3300" cy="520" r="114" fill="#d3ecdc"/>
+      <circle cx="3460" cy="520" r="107" fill="#d3ecdc"/>
+    </g>
+
+    <!-- ########## 视差层：近树丛/灌木带（快） ##########
+         260px 一格 × 4 种造型 = 1040px 周期，带长平移 -2080px = 2 个整周期 → 无缝。 -->
+    <g id="layer-bushes-near" class="anim near-scroll">
+      <use href="#nr0" x="0"/>
+      <use href="#nr1" x="260"/>
+      <use href="#nr2" x="520"/>
+      <use href="#nr3" x="780"/>
+      <use href="#nr0" x="1040"/>
+      <use href="#nr1" x="1300"/>
+      <use href="#nr2" x="1560"/>
+      <use href="#nr3" x="1820"/>
+      <use href="#nr0" x="2080"/>
+      <use href="#nr1" x="2340"/>
+      <use href="#nr2" x="2600"/>
+      <use href="#nr3" x="2860"/>
+      <use href="#nr0" x="3120"/>
+    </g>
+
+    <!-- ########## 路面（静态底） + 向后滚动的白色标线 ########## -->
+    <g id="road">
+      <!-- 沥青路面（顶边 y=450 = 车轮滚动接地点，轴心 y=396 + 滚动半径 54；外胎描边外缘略入路面为卡通画法） -->
+      <rect x="0" y="450" width="960" height="70" fill="#c6d1df"/>
+      <rect x="0" y="450" width="960" height="5" fill="#eef3f8"/>
+      <rect x="0" y="506" width="960" height="14" fill="#9fb0c2"/>
+      <!-- 路缘高光 -->
+      <rect x="0" y="450" width="960" height="3" fill="#ffffff" opacity="0.45"/>
+
+      <!-- 虚线标线组：整带平移 -1140px（间距 285px×4=1140px → 周期整除，跳帧无缝） -->
+      <g id="road-dashes" class="anim road-scroll">
+        <g fill="#ffffff">
+          <rect x="57"  y="477" width="44" height="7" rx="3.5"/>
+          <rect x="342" y="477" width="44" height="7" rx="3.5"/>
+          <rect x="627" y="477" width="44" height="7" rx="3.5"/>
+          <rect x="912" y="477" width="44" height="7" rx="3.5"/>
+          <rect x="1197" y="477" width="44" height="7" rx="3.5"/>
+          <rect x="1482" y="477" width="44" height="7" rx="3.5"/>
+          <rect x="1767" y="477" width="44" height="7" rx="3.5"/>
+          <rect x="2052" y="477" width="44" height="7" rx="3.5"/>
+        </g>
+      </g>
+
+      <!-- 后轮扬起的尘土（路面世界坐标固定，循环 3 粒错相） -->
+      <g id="dust">
+        <g class="anim dust-rise puff-d1"><circle class="anim puff-fade puff-d1" cx="222" cy="448" r="2.6" fill="#f6f1e4"/></g>
+        <g class="anim dust-rise puff-d2"><circle class="anim puff-fade puff-d2" cx="234" cy="447" r="2.1" fill="#efe8d8"/></g>
+        <g class="anim dust-rise puff-d3"><circle class="anim puff-fade puff-d3" cx="208" cy="449" r="3" fill="#f6f1e4"/></g>
+      </g>
+    </g>
+
+    <!-- ########## 自行车 + 鹈鹕（整体上下颠簸 rider-bob） ########## -->
+    <g id="ride" class="anim rider-bob">
+
+      <!-- ============ 车轮（各自绕轮心匀速旋转） ============ -->
+      <g id="wheel-rear"  transform="translate(252,396)">
+        <use class="anim wheel-spin" href="#wheelGeom"
+             style="transform-origin:50% 50%; transform-box:fill-box;"/>
+      </g>
+      <g id="wheel-front" transform="translate(402,396)">
+        <use class="anim wheel-spin" href="#wheelGeom"
+             style="transform-origin:50% 50%; transform-box:fill-box;"/>
+      </g>
+
+      <!-- ============ 车架（珊瑚色圆管） ============ -->
+      <g id="frame" fill="none" stroke-linecap="round">
+        <!-- 后叉、立管、上管、下管、头管、前叉 -->
+        <path d="M252 396 L326 407" stroke="#ff8578" stroke-width="6"/>   <!-- 后下叉 -->
+        <path d="M326 407 L308 352" stroke="#ff8578" stroke-width="7"/>   <!-- 立管 -->
+        <path d="M308 352 L392 349" stroke="#ff8578" stroke-width="7"/>   <!-- 上管 -->
+        <path d="M326 407 L388 352" stroke="#ff8578" stroke-width="7"/>   <!-- 下管 -->
+        <path d="M388 352 L402 340" stroke="#ff8578" stroke-width="7"/>   <!-- 头管 -->
+        <path d="M402 396 L394 347" stroke="#ff8578" stroke-width="5"/>   <!-- 前叉 -->
+        <!-- 把立 + 车把（含握把） -->
+        <path d="M402 340 L414 346" stroke="#ff8578" stroke-width="6"/>
+        <path d="M414 346 L438 351" stroke="#3a4350" stroke-width="5.5"/>
+        <!-- 座垫立管与座垫（座垫尾部露出在鹈鹕身后、后轮上方） -->
+        <path d="M308 352 L284 343" stroke="#ff8578" stroke-width="4"/>
+        <ellipse cx="283" cy="342" rx="16" ry="5.6" fill="#8a5c43" stroke="#5e4234" stroke-width="1"
+                 transform="rotate(-8,283,342)"/>
+        <!-- 关节圆点 -->
+        <circle cx="308" cy="352" r="3.4" fill="#e7634f"/>
+        <circle cx="392" cy="349" r="3.4" fill="#e7634f"/>
+      </g>
+
+      <!-- ============ 链条与牙盘（示意） ============ -->
+      <g id="drivetrain">
+        <!-- 后端小飞轮 -->
+        <circle cx="252" cy="396" r="5" fill="#78858f"/>
+        <!-- 链条环（上直段 → 牙盘前弧 → 下直段 → 飞轮后弧） -->
+        <path d="M252 391 L326 393 A14 14 0 0 1 326 421 L252 401 A5 5 0 0 0 252 391 Z"
+              fill="none" stroke="#454f5c" stroke-width="3"/>
+        <!-- 牙盘（圆环对称，视觉上静止即可） -->
+        <circle cx="326" cy="407" r="13" fill="#e4ebf2" stroke="#93a4b8" stroke-width="3"/>
+      </g>
+
+      <!-- ============ 远端腿（后/左腿）：整体 +180° 与近端错开 ============ -->
+      <g id="crank-far" transform="rotate(180,326,407)">
+        <use class="anim crank-spin" href="#crankGeom"
+             style="--leg:#d97a26; --legstroke:#a85c15;
+                    transform-origin:326px 407px; transform-box:view-box;"/>
+      </g>
+
+      <!-- ============ 近端腿（前/右腿） ============ -->
+      <g id="crank-near">
+        <use class="anim crank-spin" href="#crankGeom"
+             style="--leg:#ff9436; --legstroke:#cf6f1c;
+                    transform-origin:326px 407px; transform-box:view-box;"/>
+      </g>
+
+      <!-- ############ 鹈鹕（坐在车上，整体随 ride 一起颠簸） ############ -->
+      <g id="pelican">
+
+        <!-- 尾巴（在身体后方） -->
+        <g id="tail" fill="#eef2ef" stroke="#b9c7c6" stroke-width="1.6">
+          <path d="M286 318 C 262 308 250 292 258 276 C 270 286 284 304 292 314 Z"/>
+          <path d="M296 320 C 280 306 272 288 282 272 C 292 284 300 304 303 314 Z"/>
+        </g>
+
+        <!-- 远侧手臂（被身体遮住大半，仅前臂从身体前方探出握把） -->
+        <g id="arm-far" fill="none" stroke="#e6e0d2" stroke-width="8" stroke-linecap="round">
+          <path d="M350 306 C 372 318 400 334 417 344"/>
+          <circle cx="418" cy="345" r="6" fill="#e6e0d2" stroke="#b9c7c6" stroke-width="1.4"/>
+        </g>
+
+        <!-- 躯干 + 大肚子（剪影，底部几乎贴住中轴 → “坐得很低很敦实”的卡通比例） -->
+        <g id="body">
+          <path d="M352 302
+                   C 372 318 374 352 360 378
+                   C 352 394 340 405 330 407
+                   C 318 409 305 403 299 393
+                   C 291 380 285 361 281 347
+                   C 275 329 267 313 273 299
+                   C 281 287 295 279 309 275
+                   C 329 271 346 281 352 302 Z"
+                fill="#fffaf1" stroke="#b9c7c6" stroke-width="2.2"/>
+          <!-- 软阴影：肚底与胸口 -->
+          <path d="M340 372 C 334 394 322 406 310 403 C 300 400 293 390 290 378
+                   C 316 394 338 388 352 376 Z" fill="#f3ecdd" opacity="0.55"/>
+        </g>
+
+        <!-- 近侧短翅（缓慢扇动，支点近肩胛） -->
+        <g id="wing" class="anim wing-flap"
+           style="transform-origin:324px 297px; transform-box:view-box;">
+          <path d="M324 299 C 338 283 360 273 376 277 C 366 290 348 299 332 303 C 328 301 325 300 324 299 Z"
+                fill="#dce7e9" stroke="#a9bec1" stroke-width="1.8"/>
+          <path d="M334 294 C 344 286 358 282 368 283" fill="none" stroke="#b6cbd0" stroke-width="1.6"/>
+          <path d="M330 297 C 340 291 352 288 360 289" fill="none" stroke="#b6cbd0" stroke-width="1.6"/>
+        </g>
+
+        <!-- 近侧手臂：肩 → 握把 -->
+        <g id="arm-near" fill="none" stroke="#fffaf1" stroke-width="9" stroke-linecap="round">
+          <path d="M350 304 C 372 314 398 330 421 345"/>
+          <circle cx="424" cy="346" r="6.5" fill="#fffaf1" stroke="#b9c7c6" stroke-width="1.6"/>
+          <circle cx="416" cy="342" r="2.6" fill="#ffcfd0" opacity="0.8"/>  <!-- 手部小腮红/关节 -->
+        </g>
+
+        <!-- ============ 头颈组合（整体滞后晃动） ============ -->
+        <g id="head-assembly" class="anim head-sway"
+           style="transform-origin:353px 306px; transform-box:view-box;">
+          <!-- 脖子（由身体前上部伸向头） -->
+          <path d="M350 306 C 368 296 384 280 390 266 C 398 280 390 300 368 314 C 358 314 352 312 350 306 Z"
+                fill="#fffaf1" stroke="#b9c7c6" stroke-width="2"/>
+          <!-- 头部 -->
+          <circle cx="387" cy="264" r="16" fill="#fffaf1" stroke="#b9c7c6" stroke-width="2"/>
+          <!-- 眼睛 + 腮红 -->
+          <circle cx="382" cy="258" r="5.6" fill="#ffffff" stroke="#9fb2b0" stroke-width="1.2"/>
+          <circle cx="384" cy="259" r="2.6" fill="#2e3b4a"/>
+          <circle cx="385.1" cy="258.1" r="0.9" fill="#fff"/>
+          <path d="M376 253 Q 381 250 388 252" fill="none" stroke="#93a49f" stroke-width="1.4" stroke-linecap="round"/>
+          <ellipse cx="374" cy="266" rx="3.4" ry="2.4" fill="#ffb9ae" opacity="0.8"/>
+          <!-- 头顶小绒毛 -->
+          <path d="M380 249 C 378 242 386 240 388 247 M394 249 C 396 241 403 243 401 251"
+                fill="none" stroke="#b9c7c6" stroke-width="1.6" stroke-linecap="round"/>
+
+          <!-- 喙：上喙（固定） -->
+          <path d="M402 254 C 434 244 470 262 500 284 L 406 277 C 403 271 401 262 402 254 Z"
+                fill="#ffb23e" stroke="#e08a1a" stroke-width="2"/>
+          <!-- 口腔内顶（固定，合拢时被下喙遮住，张嘴时露出深色） -->
+          <path d="M410 279 L 498 285 L 496 291 L 412 285 Z" fill="#9c5617"/>
+
+          <!-- 喙：下喙 + 喉囊（整体绕喙根铰点开合） -->
+          <g id="lower-jaw" class="anim beak-open"
+             style="transform-origin:406px 279px; transform-box:view-box;">
+            <path d="M406 279 C 440 279 478 281 500 284 L 497 292
+                     C 470 293 440 290 416 287 C 409 284 405 281 406 279 Z"
+                  fill="#ff9d2e" stroke="#e08a1a" stroke-width="2"/>
+            <!-- 大喉囊（鹈鹕辨识核心：橙黄大袋，前伸下坠） -->
+            <ellipse cx="452" cy="309" rx="22" ry="18" fill="#ff9a33" stroke="#dd7c16" stroke-width="1.6"/>
+            <path d="M440 303 C 448 299 462 301 470 309" fill="none" stroke="#e8861f" stroke-width="1.6" opacity="0.7"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </svg>
+</div>
+
+<script>
+/* 极小交互层：暂停/播放 + 1x/2x 速度。
+   暂停 = 给 <body> 加 paused，利用 CSS animation-play-state 冻结全部 .anim；
+   倍速 = 切换 body.fast，把 :root 的 --speed 变量 1 → 2，所有时长统一减半。 */
+(function () {
+  'use strict';
+  var body = document.body;
+  var btnPlay = document.getElementById('btnPlay');
+  var btnSpeed = document.getElementById('btnSpeed');
+  var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  var playing = true;
+  var fast = false;
+
+  function reduced() { return mq && mq.matches; }
+
+  function syncUI() {
+    body.classList.toggle('paused', !playing);
+    body.classList.toggle('user-motion', playing && reduced());
+    if (btnPlay) {
+      btnPlay.textContent = playing ? '⏸ 暂停' : '▶ 播放';
+      btnPlay.setAttribute('aria-pressed', playing ? 'false' : 'true');
+    }
+  }
+
+  if (btnPlay) {
+    btnPlay.addEventListener('click', function () {
+      playing = !playing;
+      syncUI();
+    });
+  }
+  if (btnSpeed) {
+    btnSpeed.addEventListener('click', function () {
+      fast = !fast;
+      body.classList.toggle('fast', fast);
+      btnSpeed.textContent = fast ? '速度 ×2' : '速度 ×1';
+      btnSpeed.setAttribute('aria-pressed', fast ? 'true' : 'false');
+    });
+  }
+
+  // 首次加载尊重系统“减弱动态”偏好
+  if (reduced()) { playing = false; }
+  syncUI();
+})();
+</script>
+</body>
+</html>
