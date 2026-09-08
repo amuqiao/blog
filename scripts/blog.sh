@@ -21,6 +21,7 @@ usage() {
   build     构建静态站点到 public/。
   verify    运行发布前最小验证。
   new-post  创建新的文章页面包。
+  gif       将 HTML 动画截图导出为 GIF。
 
 日常复制:
   # 前台启动本地预览服务。默认访问：http://localhost:1313/blog/。
@@ -44,6 +45,9 @@ usage() {
   # 创建 content/posts/my-note/index.md。
   ./run.sh blog new-post my-note
 
+  # 将 HTML 动画导出为 GIF；static/posts/<slug>/x.html 默认输出到 content/posts/<slug>/cover.gif。
+  ./run.sh blog gif static/posts/pelican-bicycle-two-step-test/opus-5-high-2d.html
+
 细节:
   dev       执行：hugo server -D --bind "$HUGO_BIND" --port "$HUGO_PORT" --baseURL "$(preview_url)" --appendPort=false --renderToMemory --disableFastRender --noHTTPCache
             监听 content/config/static/assets 变化，并触发浏览器热重载。
@@ -56,6 +60,9 @@ usage() {
   verify    执行：hugo --gc --minify
   new-post  执行：hugo new content posts/<slug>/index.md
             <slug> 不能包含 /、.. 或空白字符。
+  gif       执行：node scripts/capture-html-gif.mjs <input.html> [output.gif]
+            依赖 Node、Playwright、Google Chrome 和 gifski。首次使用前运行 npm install。
+            常用参数：--duration 4 --fps 15 --width 800 --selector .stage --browser chrome --clock realtime
 EOF
 }
 
@@ -69,6 +76,14 @@ require_hugo() {
 require_lsof() {
   if ! command -v lsof >/dev/null 2>&1; then
     echo "错误：无法进行端口预检，必需命令不在 PATH 中：lsof" >&2
+    exit 127
+  fi
+}
+
+require_command() {
+  name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "错误：必需命令不在 PATH 中：$name" >&2
     exit 127
   fi
 }
@@ -276,6 +291,17 @@ case "$action" in
     fi
     shift
     exec hugo new content "posts/$slug/index.md" "$@"
+    ;;
+  gif)
+    shift
+    case "${1:-}" in
+      -h|--help|help)
+        exec node "$ROOT_DIR/scripts/capture-html-gif.mjs" --help
+        ;;
+    esac
+    require_command node
+    require_command gifski
+    exec node "$ROOT_DIR/scripts/capture-html-gif.mjs" "$@"
     ;;
   "")
     usage >&2

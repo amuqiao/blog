@@ -20,6 +20,7 @@ usage() {
 
 写作:
   ./run.sh blog new-post my-note      # 创建文章页面包
+  ./run.sh blog gif static/posts/my-note/demo.html  # 将 HTML 动画导出为 GIF
 
 构建:
   ./run.sh blog verify                # 发布前验证
