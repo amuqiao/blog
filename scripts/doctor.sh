@@ -21,7 +21,7 @@ usage() {
 动作:
   env          检查本地 Hugo 命令和 extended 版本支持。
   theme        检查 Blowfish submodule 和主题目录。
-  content-map  检查文章/demo slug 映射和 .data 引用。
+  content-map  检查文章/demo slug 映射和 .data/ 路径引用。
   port         检查本地预览端口是否被占用。
   build        用更严格的参数构建，用于排查路径问题。
   all          依次运行 env、theme、content-map 和 build。
@@ -29,7 +29,7 @@ usage() {
 排障复制:
   ./run.sh doctor env            # 检查 Hugo 和 extended 版
   ./run.sh doctor theme          # 检查 Blowfish submodule
-  ./run.sh doctor content-map    # 检查文章/demo 映射和 .data 引用
+  ./run.sh doctor content-map    # 检查文章/demo 映射和 .data/ 路径引用
   ./run.sh doctor port           # 检查默认端口
   ./run.sh doctor port 1314      # 检查指定端口
   ./run.sh doctor build          # 严格构建
@@ -39,7 +39,7 @@ usage() {
   env          打印 Hugo 版本；如果不是 extended 版则失败。
   theme        打印 themes/blowfish 的 git submodule 状态，并检查主题目录。
   content-map  列出文章页面包，检查 static/posts/<slug>/ 是否有对应文章，
-               如果发布路径引用 .data 则失败。
+               如果发布路径引用 .data/ 则失败。
   port         使用 HUGO_PORT，默认检查 1313；也可以传入端口号。
                如果端口被当前项目的 Hugo 占用，视为单例预览服务已运行。
   build        执行：hugo --cleanDestinationDir --gc --minify --printPathWarnings
@@ -105,15 +105,15 @@ check_content_map() {
   fi
 
   set +e
-  rg -n -F ".data" content static config
+  rg -n -F ".data/" content static config
   rg_status="$?"
   set -e
 
   if [[ "$rg_status" -eq 0 ]]; then
-    echo "错误：Hugo 发布路径不能引用 .data。" >&2
+    echo "错误：Hugo 发布路径不能引用 .data/。" >&2
     failed=1
   elif [[ "$rg_status" -gt 1 ]]; then
-    echo "错误：扫描 Hugo 发布路径中的 .data 引用失败。" >&2
+    echo "错误：扫描 Hugo 发布路径中的 .data/ 引用失败。" >&2
     exit "$rg_status"
   fi
 
