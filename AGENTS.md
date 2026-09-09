@@ -12,6 +12,9 @@
 - 普通文章使用页面包：`content/posts/<post-slug>/index.md`。
 - 文章专属图片、PDF、JSON、音频、视频等页面资源，优先放在同一个页面包内：`content/posts/<post-slug>/...`。
 - 文章列表/首页卡片封面统一命名为 `cover.*`；文章页 hero 背景统一命名为 `background.*`，让 Blowfish 自动按用途识别。
+- 普通文章的静态封面使用 `./run.sh blog cover <slug>` 生成到文章页面包；命令读取环境变量 `OPENAI_API_KEY`，默认不覆盖已有 `cover.png`。
+- 架构图、流程图和时序图优先使用 Blowfish 的 `mermaid` shortcode；不要使用当前站点尚未配置渲染支持的 `mermaid` 代码围栏。
+- 仅服务于文章局部的少量 HTML + CSS 可直接嵌入 Markdown；CSS 必须使用文章专属 class 限定作用域，避免污染全站样式。
 - 需要原样发布的独立 HTML demo、可直接打开的实验页面、完整前端静态小作品，放在同名静态目录：`static/posts/<post-slug>/...`。
 - `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 `<post-slug>` 必须一致，用 slug 建立一一对应关系。
 - 文章引用同名静态目录中的独立 HTML 时，优先使用同级相对路径，例如 `2d.html`、`3d.html`；构建后对应 `/posts/<post-slug>/2d.html`、`/posts/<post-slug>/3d.html`。
