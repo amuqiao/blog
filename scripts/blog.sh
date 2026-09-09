@@ -22,6 +22,7 @@ usage() {
   verify    运行发布前最小验证。
   new-post  创建新的文章页面包。
   gif       将 HTML 动画截图导出为 GIF。
+  cover     根据文章 slug 调用 OpenAI Image API 生成 cover.png。
 
 日常复制:
   # 前台启动本地预览服务。默认访问：http://localhost:1313/blog/。
@@ -48,6 +49,9 @@ usage() {
   # 将 HTML 动画导出为 GIF；static/posts/<slug>/x.html 默认输出到 content/posts/<slug>/cover.gif。
   ./run.sh blog gif static/posts/pelican-bicycle-two-step-test/opus-5-high-2d.html
 
+  # 根据文章内容生成封面；需要环境变量 OPENAI_API_KEY。
+  ./run.sh blog cover my-note
+
 细节:
   dev       执行：hugo server -D --bind "$HUGO_BIND" --port "$HUGO_PORT" --baseURL "$(preview_url)" --appendPort=false --renderToMemory --disableFastRender --noHTTPCache
             监听 content/config/static/assets 变化，并触发浏览器热重载。
@@ -63,6 +67,10 @@ usage() {
   gif       执行：node scripts/capture-html-gif.mjs <input.html> [output.gif]
             依赖 Node、Playwright、Google Chrome 和 gifski。首次使用前运行 npm install。
             常用参数：--duration 4 --fps 15 --width 800 --selector .stage --browser chrome --clock realtime
+  cover     执行：node scripts/generate-post-cover.mjs <slug> [options]
+            读取文章 front matter 和正文摘要，默认生成 2048x1152 的 cover.png。
+            依赖 Node.js 20+、npm install 和环境变量 OPENAI_API_KEY。
+            常用参数：--prompt "补充要求" --quality high --force --dry-run
 EOF
 }
 
@@ -302,6 +310,11 @@ case "$action" in
     require_command node
     require_command gifski
     exec node "$ROOT_DIR/scripts/capture-html-gif.mjs" "$@"
+    ;;
+  cover)
+    shift
+    require_command node
+    exec node "$ROOT_DIR/scripts/generate-post-cover.mjs" "$@"
     ;;
   "")
     usage >&2

@@ -21,6 +21,7 @@ usage() {
 写作:
   ./run.sh blog new-post my-note      # 创建文章页面包
   ./run.sh blog gif static/posts/my-note/demo.html  # 将 HTML 动画导出为 GIF
+  ./run.sh blog cover my-note         # 使用 OpenAI API 生成 cover.png
 
 构建:
   ./run.sh blog verify                # 发布前验证

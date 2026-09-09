@@ -6,9 +6,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "capture:gif": "node scripts/capture-html-gif.mjs"
+    "capture:gif": "node scripts/capture-html-gif.mjs",
+    "cover": "node scripts/generate-post-cover.mjs"
   },
   "devDependencies": {
+    "gray-matter": "^4.0.3",
+    "openai": "^7.12.1",
     "playwright": "^1.55.0"
   }
 }
