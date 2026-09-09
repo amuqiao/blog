@@ -7,6 +7,17 @@
 - 提交信息优先写“改了什么”和对象，不写空泛标题。
 - 只在用户明确要求时提交；非明确要求下不做 `amend`，不改写历史。
 
+## 仓库读取范围
+
+本仓库是 Hugo 博客，`content/` 和 `static/` 可能包含大量正文、图片、HTML demo、音视频、PDF 等内容。除非任务明确需要，不要全量读取这些目录。
+
+- 默认先用 `rg --files`、`find`、`git status`、`git diff` 收敛范围。
+- 优先读取 `config/`、`layouts/`、`assets/css/`、`scripts/`、`README.md`、`AGENTS.md` 和当前任务直接相关的少量文件。
+- 处理文章或静态资源时，只打开命中的文章、slug 目录、资源文件或 front matter。
+- 不默认展开 `content/posts/**`、`content/notes/**`、`static/**` 的全部内容。
+- 不读取 `public/`、`resources/`、`.data/`，除非任务明确是排查生成物、缓存或临时素材。
+- 只有在用户明确要求全站内容审查、链接迁移、分类整理、构建错误定位、资源引用排查时，才扩大读取范围。
+
 ## Hugo 博客资源映射
 
 - 普通文章使用页面包：`content/posts/<post-slug>/index.md`。
