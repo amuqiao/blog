@@ -45,7 +45,9 @@ Hugo 负责把 `content/` 构建成静态站点，Blowfish 负责页面布局、
 
 - [Hugo extended](https://gohugo.io/installation/) `0.162.0` - `0.165.0`
 - Git submodule 支持，用于拉取 [Blowfish](https://blowfish.page/) 主题
-- 可选：生成 HTML 动画预览 GIF 时需要 Node.js 20+、[Playwright](https://playwright.dev/)、Google Chrome 和 `gifski`，macOS 可用 `brew install gifski`
+- 可选：使用封面生成或 GIF 工具时需要 Node.js 20+ 并运行 `npm install`
+- 可选：生成静态封面需要环境变量 `OPENAI_API_KEY`
+- 可选：生成 HTML 动画预览 GIF 还需要 [Playwright](https://playwright.dev/)、Google Chrome 和 `gifski`，macOS 可用 `brew install gifski`
 
 首次克隆后拉取主题：
 
@@ -76,6 +78,7 @@ git submodule update --init --recursive --depth 1
 | `./run.sh down` | 停止当前项目的本地预览服务 |
 | `HUGO_PORT=1314 ./run.sh up` | 临时换端口启动 |
 | `./run.sh blog new-post my-post` | 创建文章页面包 |
+| `./run.sh blog cover my-post` | 使用 OpenAI Image API 生成文章封面 |
 | `./run.sh blog gif static/posts/my-post/demo.html` | 将 HTML 动画导出为文章 GIF |
 | `./run.sh blog build` | 构建静态站点到 `public/` |
 | `./run.sh blog verify` | 发布前最小验证 |
@@ -117,9 +120,19 @@ content/posts/my-post/
 ```text
 content/posts/my-post/
 ├── index.md
-├── cover.gif        # 首页/列表卡片封面
+├── cover.png        # 首页/列表卡片静态封面；动图使用 cover.gif
 └── background.png   # 文章页顶部背景
 ```
+
+为普通文章生成静态封面时，先在当前终端设置 API Key，再传入文章 slug：
+
+```bash
+export OPENAI_API_KEY="..."
+npm install
+./run.sh blog cover my-post
+```
+
+命令读取文章的 `title`、`description`、`tags` 和正文摘要，生成 `content/posts/my-post/cover.png`。默认不会覆盖已有封面；需要重做时使用 `--force`，定制画面时使用 `--prompt "补充要求"`。
 
 交互文章采用“Markdown 发布壳 + HTML 正文真源”的方式：
 
