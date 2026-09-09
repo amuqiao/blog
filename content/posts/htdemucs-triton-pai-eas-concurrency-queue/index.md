@@ -3,7 +3,6 @@ title: "PAI-EAS Triton 服务并发排队问题：完整复盘"
 date: 2026-09-09
 lastmod: 2026-09-09
 draft: false
-showHero: false
 description: "复盘 HTDemucs 服务并发 2 即排队的问题，理解 EAS 实例、Triton 模型实例、显存约束与水平扩容。"
 tags:
   - Triton
@@ -47,6 +46,8 @@ series_order: 5
 
 你的服务由三层组成，每一层负责不同的事：
 
+#### 字符图：适合复制和快速阅读
+
 ```text
 ┌────────────────────────────────────────────────┐
 │                  用户请求                       │
@@ -54,20 +55,88 @@ series_order: 5
 └────────────────────┬───────────────────────────┘
                      │
 ┌────────────────────▼───────────────────────────┐
-│  EAS 实例（1 台）                               │
+│  EAS 实例（1 台）                                │
 │  ecs.gn8is.4xlarge · 1 x L20 48GB · 16 CPU     │
 │  ┌─────────────────────────────────────────┐   │
-│  │  Docker 容器                            │   │
+│  │  Docker 容器                             │   │
 │  │  ┌───────────────────────────────────┐  │   │
 │  │  │  Triton Inference Server          │  │   │
 │  │  │  ┌─────────────────────────────┐  │  │   │
-│  │  │  │  模型实例 x1（默认）        │  │  │   │
-│  │  │  │  一次执行一个请求或 batch   │  │  │   │
+│  │  │  │  模型实例 x1（默认）           │  │  │   │
+│  │  │  │  一次执行一个请求或 batch      │  │  │   │
 │  │  │  └─────────────────────────────┘  │  │   │
 │  │  └───────────────────────────────────┘  │   │
 │  └─────────────────────────────────────────┘   │
 └────────────────────────────────────────────────┘
 ```
+
+<style>
+  .service-stack-mermaid pre.mermaid {
+    margin: 0;
+    padding: 0;
+    overflow-x: auto;
+    background: transparent;
+  }
+  .service-stack-mermaid pre.mermaid svg {
+    display: block;
+    margin-inline: auto;
+  }
+  .service-stack-mermaid div.labelBkg,
+  .service-stack-mermaid span.edgeLabel,
+  .service-stack-mermaid span.edgeLabel p {
+    color: #cbd5e1 !important;
+    background: #0b1220 !important;
+  }
+  .service-stack-mermaid {
+    margin: 1.25rem 0 1.75rem;
+    padding: 1rem;
+    overflow: hidden;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    background: #0b1220;
+  }
+</style>
+
+#### Mermaid：突出请求流向
+
+<div class="service-stack-mermaid">
+
+{{< mermaid >}}
+%%{init: {"flowchart": {"curve": "basis", "nodeSpacing": 36, "rankSpacing": 44}}}%%
+flowchart TB
+    request(["用户请求"])
+    gateway(["EAS 网关<br/>接收并校验 HTTP 请求"])
+    service["EAS 服务<br/>选择可用计算副本"]
+
+    subgraph eas["EAS 实例 x1 · ecs.gn8is.4xlarge · L20 48GB · 16 CPU"]
+        direction TB
+        subgraph docker["Docker 容器"]
+            direction TB
+            triton["Triton Inference Server"]
+            model[["模型实例 x1（默认）<br/>一次执行一个请求或 batch"]]
+        end
+    end
+    request -->|HTTP| gateway
+    gateway -->|路由| service
+    service -->|转发| triton
+    triton -->|调度| model
+
+    classDef request fill:#1e293b,stroke:#94a3b8,color:#f8fafc,stroke-width:1.5px;
+    classDef gateway fill:#1d4ed8,stroke:#93c5fd,color:#ffffff,stroke-width:2px;
+    classDef service fill:#0e7490,stroke:#67e8f9,color:#ffffff,stroke-width:2px;
+    classDef triton fill:#78350f,stroke:#fbbf24,color:#ffffff,stroke-width:2px;
+    classDef model fill:#14532d,stroke:#4ade80,color:#ffffff,stroke-width:2px;
+    class request request;
+    class gateway gateway;
+    class service service;
+    class triton triton;
+    class model model;
+    style eas fill:#172554,stroke:#60a5fa,color:#dbeafe,stroke-width:2px;
+    style docker fill:#164e63,stroke:#22d3ee,color:#cffafe,stroke-width:2px;
+    linkStyle default stroke:#94a3b8,stroke-width:2px;
+{{< /mermaid >}}
+
+</div>
 
 关键区别：
 
@@ -102,14 +171,14 @@ series_order: 5
 GPU 利用率 17.8% 的含义：
 
 ┌──────────────────────────────────────────────┐
-│  L20 GPU 总计算能力                          │
+│  L20 GPU 总计算能力                            │
 │                                              │
-│  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│  ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
 │  17.8%                                       │
-│  采样窗口内的平均活跃程度                    │
+│  采样窗口内的平均活跃程度                        │
 │                                              │
-│  低利用率可能来自前后处理、数据搬运、        │
-│  kernel 间隙、同步点或监控采样粒度。         │
+│  低利用率可能来自前后处理、数据搬运、              │
+│  kernel 间隙、同步点或监控采样粒度。              │
 └──────────────────────────────────────────────┘
 ```
 
@@ -141,13 +210,13 @@ GPU 利用率 17.8% 的含义：
 
 ```text
 ┌──────────────────────────────────────┐
-│  L20：48 GB 显存                     │
+│  L20：48 GB 显存                      │
 │                                      │
-│  实例 1：当前服务约 28.5 GB          │
-│  实例 2：新增模型上下文和推理缓冲    │
-│  双请求：还会叠加峰值中间张量        │
+│  实例 1：当前服务约 28.5 GB             │
+│  实例 2：新增模型上下文和推理缓冲         │
+│  双请求：还会叠加峰值中间张量             │
 │                                      │
-│  风险：总峰值可能超过 48 GB -> OOM   │
+│  风险：总峰值可能超过 48 GB -> OOM      │
 └──────────────────────────────────────┘
 ```
 
@@ -195,9 +264,9 @@ GPU 利用率 17.8% 的含义：
 ```text
 之前                               之后
 ┌────────────────┐       ┌────────────────┐  ┌────────────────┐
-│ EAS 实例 x1    │       │ EAS 实例 #1    │  │ EAS 实例 #2    │
+│ EAS 实例 x1     │       │ EAS 实例 #1    │  │ EAS 实例 #2     │
 │ L20 x1 48GB    │       │ L20 x1 48GB    │  │ L20 x1 48GB    │
-│ Triton 实例 x1 │  ->   │ Triton 实例 x1 │  │ Triton 实例 x1 │
+│ Triton 实例 x1  │  ->   │ Triton 实例 x1 │  │ Triton 实例 x1  │
 │ $1.749/h       │       │                │  │                │
 └────────────────┘       └────────────────┘  └────────────────┘
                                   $3.498/h
