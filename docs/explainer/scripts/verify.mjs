@@ -105,31 +105,90 @@ head("1 离线性与运行时");
   if (!stat.skip) warn("没有跳转正文链接 —— 侧栏导航长时键盘用户要按很多次 Tab");
 }
 
-/* ── 2 窄屏 ── */
-head("2 窄屏 360×740");
+/* ── 版式契约 ── */
+head("2 版式契约");
 {
-  const page = await openPage(b, P.html, { viewport: { width: 360, height: 740 } });
+  const page = await openPage(b, P.html, { viewport: { width: 1920, height: 900 } });
   const r = await page.evaluate(() => {
-    const de = document.documentElement, over = [];
-    if (de.scrollWidth > de.clientWidth + 1) {
-      document.querySelectorAll("main *").forEach((el) => {
-        const box = el.getBoundingClientRect();
-        if (box.right > de.clientWidth + 1) {
-          let a = el.parentElement, scrolls = false;
-          while (a) { if (/auto|scroll/.test(getComputedStyle(a).overflowX)) { scrolls = true; break; } a = a.parentElement; }
-          if (!scrolls) over.push(`${el.tagName}.${String(el.className).slice(0, 24)} right=${Math.round(box.right)}`);
-        }
-      });
-    }
-    return { sw: de.scrollWidth, cw: de.clientWidth, over: [...new Set(over)].slice(0, 5) };
+    const sec = document.querySelector("main > section[id]");
+    const ps = [...sec.children].filter((x) => x.tagName === "P");
+    const norm = ps.find((x) => !/lead/.test(String(x.className)));
+    const lead = ps.find((x) => /lead/.test(String(x.className)));
+    const W = (n) => (n ? Math.round(n.getBoundingClientRect().width) : null);
+    const shell = document.querySelector('[class*="shell"]');
+    return {
+      shell: W(shell),
+      para: W(norm),
+      lead: W(lead),
+      paraMax: norm ? getComputedStyle(norm).maxWidth : null,
+      fontSize: norm ? getComputedStyle(norm).fontSize : null,
+      chUnits: [...document.styleSheets].reduce((n, ss) => {
+        let rules; try { rules = ss.cssRules; } catch { return n; }
+        return n + [...rules].filter((x) => x.style && /\d+ch/.test(x.style.maxWidth || "")).length;
+      }, 0),
+    };
   });
   await page.close();
-  if (r.over.length) F(`横向溢出 ${r.sw - r.cw}px：${r.over.join("；")}`);
-  else ok(`无横向溢出（scrollWidth ${r.sw} / clientWidth ${r.cw}）`);
+  /*
+   * 契约的核心只有一条：正文段落不许有自己的 max-width。
+   * 列宽本身就是行长控制器，再加一道就会出现「文字 624 / 图 952」那种右边空一条的版面。
+   * ch 是数字 0 的宽度，拿它量中文会缩水近一半，一并禁掉。
+   */
+  if (r.paraMax !== "none") F(`正文段落设了 max-width: ${r.paraMax} —— 列宽即行长，不要加第二道限制`);
+  else ok(`正文段落无独立 max-width（实宽 ${r.para}）`);
+  if (r.chUnits) F(`${r.chUnits} 处 max-width 用了 ch —— 中文行长请用列宽控制，ch 会缩水近一半`);
+  const band = (v, lo, hi, name) => {
+    if (v == null) { warn(`${name} 量不到`); return; }
+    if (v < lo || v > hi) F(`${name} ${v} 超出契约区间 ${lo}–${hi}`);
+    else ok(`${name} ${v}（契约 ${lo}–${hi}）`);
+  };
+  band(r.shell, 1180, 1230, "shell 宽度");
+  band(r.para, 845, 885, "正文列宽");
+  band(r.lead, 700, 730, "导语宽度");
+  if (r.fontSize !== "16px") F(`正文字号 ${r.fontSize}，契约是 16px`);
+  else ok("正文字号 16px");
+}
+
+/* ── 3 窄屏 ── */
+head("3 窄屏 360×740");
+{
+  const page = await openPage(b, P.html, { viewport: { width: 360, height: 740 } });
+  /*
+   * 判据是「页面真的能横向滚动吗」，不是「有没有元素矩形越界」。
+   * 矩形扫描漏过一整类：nowrap 长串（端点路径之类）溢出时溢出的是文本，
+   * 没有对应元素，rect 查不到，但页面照样能左右拖。
+   * 定位时再按「自身内容比自身宽且自己不滚动」去找，那才是真正把溢出推给祖先的元素。
+   */
+  const r = await page.evaluate(() => {
+    const de = document.documentElement;
+    window.scrollTo(500, 0);
+    const canScroll = window.scrollX > 0;
+    window.scrollTo(0, 0);
+    const over = [];
+    if (canScroll) {
+      document.querySelectorAll("body *").forEach((el) => {
+        if (el.scrollWidth <= el.clientWidth + 1) return;
+        if (/auto|scroll/.test(getComputedStyle(el).overflowX)) return;
+        // 祖先里只要有人滚动或裁剪，这处溢出就到不了页面本体，不算线索
+        let a = el.parentElement, contained = false;
+        while (a && a !== document.body) {
+          const ox = getComputedStyle(a).overflowX;
+          if (/auto|scroll|hidden|clip/.test(ox)) { contained = true; break; }
+          a = a.parentElement;
+        }
+        if (contained) return;
+        over.push(`${el.tagName}.${String(el.className).slice(0, 24)}${el.id ? "#" + el.id : ""} ${el.clientWidth}→${el.scrollWidth}`);
+      });
+    }
+    return { sw: de.scrollWidth, cw: de.clientWidth, canScroll, over: [...new Set(over)].slice(0, 6) };
+  });
+  await page.close();
+  if (r.canScroll) F(`页面可横向滚动（scrollWidth ${r.sw} / clientWidth ${r.cw}）：${r.over.join("；") || "未定位到具体元素"}`);
+  else ok(`无横向滚动（scrollWidth ${r.sw} / clientWidth ${r.cw}）`);
 }
 
 /* ── 3 减弱动效 ── */
-head("3 prefers-reduced-motion");
+head("4 prefers-reduced-motion");
 {
   const page = await b.newPage({ viewport: { width: 1280, height: 940 } });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -145,7 +204,7 @@ head("3 prefers-reduced-motion");
 }
 
 /* ── 4 真实文章页 + sandbox iframe ── */
-head("4 文章页与 sandbox iframe");
+head("5 文章页与 sandbox iframe");
 if (await exists(P.publicIndex)) {
   const inner = [];
   const page = await b.newPage({ viewport: { width: 1280, height: 940 } });
@@ -174,7 +233,7 @@ if (await exists(P.publicIndex)) {
 }
 
 /* ── 5 构建产物 ── */
-head("5 构建产物（不能只看 exit code）");
+head("6 构建产物（不能只看 exit code）");
 {
   const items = [
     [P.publicIndex, "文章页"],

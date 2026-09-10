@@ -184,13 +184,21 @@ if (await exists(P.html)) {
     if (open !== close) F(`<${tag}> 开闭不平衡：${open} 开 / ${close} 闭`);
   }
 
-  // 逐像素绘制必须走 raw 模式，否则 putImageData 无视 ctx.scale(dpr)，画面只填左上角
-  if (/putImageData/.test(s)) {
-    const calls = (s.match(/\.canvas\s*\(/g) || []).length;
-    const raws = (s.match(/raw:\s*true/g) || []).length;
-    if (calls && raws < calls) {
-      F(`用到 putImageData，但 canvas 创建 ${calls} 处中只有 ${raws} 处传了 raw:true`);
-    } else if (calls) ok(`canvas ${calls} 处，均已声明 raw 模式`);
+  /*
+   * 逐像素绘制必须走 raw 模式，否则 putImageData 无视 ctx.scale(dpr)，画面只填左上角。
+   * 两点讲究：
+   * 一是先剥注释——骨架里解释这条规则的注释本身就含 "putImageData"，不剥会自己报自己；
+   * 二是只要求「至少有一个 raw」，不要求全部。一篇里既有逐像素画布又有矢量画布是正常的，
+   *   静态扫描无法把某次 putImageData 绑定到某个 canvas，要求全部 raw 只会逼作者乱传参。
+   */
+  const codeNoComments = s
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/<!--[\s\S]*?-->/g, "");
+  if (/putImageData/.test(codeNoComments)) {
+    const calls = (codeNoComments.match(/\.canvas\s*\(/g) || []).length;
+    const raws = (codeNoComments.match(/raw:\s*true/g) || []).length;
+    if (!raws) F(`用到 putImageData，但 ${calls} 处 canvas 创建里没有一处传 raw:true`);
+    else ok(`canvas ${calls} 处，其中 ${raws} 处声明 raw 模式（用到 putImageData）`);
   }
   if (!fails.length) ok("成品静态检查通过");
 } else {
