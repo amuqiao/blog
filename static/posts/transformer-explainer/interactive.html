@@ -924,7 +924,7 @@ footer.tx-end{border-top:1px solid var(--rule);margin-top:44px;padding:24px 0 0;
 <p class="tx-note-under">拖动滑杆改变 d_k、切换是否缩放：下面同时给出<b>实测标准差</b>与<b>理论值 √d_k</b>，以及归一化熵 <code>H(p)/ln(n)</code>（1 = 权重接近均匀，0 = 接近 one-hot）。</p>
 <div class="tx-ctl">
 <span class="tx-fl">d_k = <b><span id="tx-c-s-dk-val">64</span></b></span>
-<input type="range" class="tx-sl k" id="tx-c-s-dk-slider" min="2" max="12" step="1" value="6" aria-label="d_k 取值，2 的幂，范围 4 到 4096">
+<input type="range" class="tx-sl k" id="tx-c-s-dk-slider" min="2" max="12" step="1" value="6" aria-label="d_k 取值，2 的幂，范围 4 到 4096" aria-valuetext="d_k = 64">
 </div>
 <div class="tx-ctl">
 <span class="n">缩放方式</span>
@@ -3094,6 +3094,9 @@ window.TX = (function () {
       var logv = +slider.value;
       var dk = Math.pow(2, logv);
       if (dkOut) dkOut.textContent = String(dk);
+      /* 滑杆 value 是指数 2..12，读屏默认只念指数。读数 span 在滑杆之前且不是 .tx-rd，
+         全局 syncValueText 找不到它，这里显式同步。 */
+      slider.setAttribute("aria-valuetext", "d_k = " + dk);
 
       var rawStd = empiricalStd(dk);
       var theoStd = Math.sqrt(dk);
@@ -3350,6 +3353,9 @@ window.TX = (function () {
 
       var flB = TX.el("label", "tx-fl", "base = <b class=\"tx-d-vb\">10^" + st.baseExp.toFixed(1) + "</b>");
       var slB = TX.el("input"); slB.type = "range"; slB.className = "tx-sl k"; slB.min = 3; slB.max = 6; slB.step = 0.1; slB.value = st.baseExp;
+      /* 同上：value 是 10 的指数，不是 base 本身 */
+      function syncBaseText() { slB.setAttribute("aria-valuetext", "base = 10 的 " + st.baseExp.toFixed(1) + " 次方"); }
+      syncBaseText();
       flB.appendChild(slB);
 
       ctl.appendChild(flD); ctl.appendChild(flB);
@@ -3399,7 +3405,7 @@ window.TX = (function () {
         st.d = +slD.value; TX.$(".tx-d-vd", flD).textContent = st.d; draw();
       });
       slB.addEventListener("input", function () {
-        st.baseExp = +slB.value; TX.$(".tx-d-vb", flB).textContent = "10^" + st.baseExp.toFixed(1); draw();
+        st.baseExp = +slB.value; TX.$(".tx-d-vb", flB).textContent = "10^" + st.baseExp.toFixed(1); syncBaseText(); draw();
       });
 
       draw();
