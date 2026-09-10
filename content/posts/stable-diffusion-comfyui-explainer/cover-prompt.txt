@@ -1,0 +1,13 @@
+# 生成时间 2026-09-10T13:55:20+08:00
+# 文本模型 gpt-4.1
+# 生图模型 gpt-image-2 · 2048x1152 · quality=high
+# 风格来源 文本模型自选
+# 画面构思 一只橡皮擦正仔细地擦去画纸上的一团浓重混沌的灰色铅笔噪点，画纸下方逐渐显露出一幅清晰的风景画轮廓。
+# 风格 写实风格，柔和自然光，纸面细纹质感
+# 交互页 static/posts/stable-diffusion-comfyui-explainer/interactive.html
+# 补充要求 无
+# 复现 ./run.sh blog cover stable-diffusion-comfyui-explainer --quality high --force
+
+A single realistic eraser is carefully erasing a dense, chaotic cloud of graphite noise from the surface of a sheet of drawing paper. As the eraser moves, the area beneath begins to reveal the emerging outlines of a serene landscape artwork, such as gentle hills or a calm lake, appearing from underneath the removed grey smudges. The image is rendered in a realistic painterly style, with soft natural lighting and the subtle texture of fine drawing paper clearly visible in the background.
+Composition: wide 16:9 landscape, primary subject centered in a generous safe area so responsive cropping preserves the meaning.
+Constraints: no readable text, no letters, no numbers, no logos, no trademarks, no watermark, no decorative dashboard, no meaningless charts. Depict technically meaningful relationships rather than generic atmosphere.
