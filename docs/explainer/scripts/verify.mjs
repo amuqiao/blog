@@ -111,11 +111,17 @@ head("2 版式契约");
   const page = await openPage(b, P.html, { viewport: { width: 1920, height: 900 } });
   const r = await page.evaluate(() => {
     const W = (n) => (n ? Math.round(n.getBoundingClientRect().width) : null);
-    /* 页面结构差异很大：有的没有 <main>，有的正文段落不是 section 的直接子元素。
-       取「第一段够长的正文」比按结构层级取更稳。 */
+    /*
+     * 页面结构差异很大：有的没有 <main>，有的正文段落不是 section 的直接子元素。
+     * 判据取「全页最宽的那个长段落」：正文一定比卡片、图注里的嵌套段落宽，
+     * 这样不依赖任何结构层级。按「第一段」取会抓到卡片里的段落，量出来偏窄。
+     */
     const scope = document.querySelector("main") || document.body;
-    const longs = [...scope.querySelectorAll("p")].filter((x) => x.textContent.trim().length > 40);
-    const norm = longs.find((x) => !/lead/.test(String(x.className)));
+    const longs = [...scope.querySelectorAll("p")].filter((x) =>
+      x.textContent.trim().length > 40
+      && !/lead/.test(String(x.className))
+      && !x.closest("header"));   /* 首屏那句主问题字号是 clamp 出来的，不能当正文样本 */
+    const norm = longs.sort((a, c) => c.getBoundingClientRect().width - a.getBoundingClientRect().width)[0];
     const lead = [...scope.querySelectorAll("p")].find((x) => /lead/.test(String(x.className)));
     const shell = document.querySelector('[class*="shell"]') || scope;
     /*

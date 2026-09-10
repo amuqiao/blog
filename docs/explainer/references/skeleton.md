@@ -42,7 +42,21 @@ shell        1188px    grid: 236px 侧栏 + 1fr，gap 0 44px，padding 0 26px
 
 **别把 A 的 1188 套到 B 上。** 那 1188 是「236 侧栏 + 856 正文」算出来的；没有侧栏的页面照抄会得到一条 1188px 宽的居中文字，约 74 个汉字一行，比不改更糟。反过来也一样，B 的 700 套到 A 上会让正文只占列宽的 80% 以下。
 
-`verify.mjs` 的「版式契约」一节按页面有没有侧栏自动选分支。
+`verify.mjs` 的「版式契约」一节按页面有没有侧栏自动选分支。判据是 shell 的 `grid-template-columns` 是不是两列、第一列在 180–320px——不要按类名认侧栏，transformer 的导航叫 spine，而它页面里另有一堆 `.tx-side` 内容块。正文样本取「全页最宽的长段落」，并排除 `<header>`（首屏那句主问题字号是 `clamp` 出来的）。
+
+### 已知不合规的旧页面
+
+工具集之前的 5 个页面不满足契约，这是**已知且接受**的状态，不是待办：
+
+```text
+demucs-htdemucs-explainer            正文 1016（约 63 字，偏长）
+htdemucs-ft-onnx-deployment-guide    正文 1012
+triton-pai-eas-image-deploy          正文  916
+diffusion-models-overview            段落设了 max-width + 2 处 ch 单位
+triton-server-image-deploy           字号 15.5px
+```
+
+它们都是居中的、能读，只是尺寸各不相同；而且没有 skeleton/parts 结构，改动只能直接动成品 HTML——那正是这套工具集想避免的做法。**下次因为内容原因要改这些文章时再顺手对齐**，不要为了对齐版式专门动一遍。跑 verify 看到这几篇报红，属于预期。
 
 **唯一需要记住的一条：正文段落不要设 `max-width`。**
 
