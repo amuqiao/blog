@@ -300,7 +300,7 @@ content/posts/<slug>/cover.gif
 命令背后调用的是：
 
 ```text
-scripts/capture-html-gif.mjs
+scripts/gif/capture.mjs
 ```
 
 它的流程可以拆成六步：
@@ -427,7 +427,7 @@ git push origin main
 如果这次还新增或修改了截图工具链，再把对应工具文件一起加入提交：
 
 ```bash
-git add run.sh scripts/blog.sh scripts/capture-html-gif.mjs package.json package-lock.json
+git add run.sh scripts/blog.sh scripts/gif/capture.mjs package.json package-lock.json
 ```
 
 推送后 GitHub Actions 会构建 Hugo 站点，并发布到：

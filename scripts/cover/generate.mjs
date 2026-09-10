@@ -176,7 +176,7 @@ function isPng(buffer) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const rootDir = path.resolve(SCRIPT_DIR, "..");
+  const rootDir = path.resolve(SCRIPT_DIR, "..", "..");
   const contentRoot = path.join(rootDir, "content", "posts");
   const postDir = path.join(contentRoot, options.slug);
   const articlePath = path.join(postDir, "index.md");

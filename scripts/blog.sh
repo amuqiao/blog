@@ -64,10 +64,10 @@ usage() {
   verify    执行：hugo --gc --minify
   new-post  执行：hugo new content posts/<slug>/index.md
             <slug> 不能包含 /、.. 或空白字符。
-  gif       执行：node scripts/capture-html-gif.mjs <input.html> [output.gif]
+  gif       执行：node scripts/gif/capture.mjs <input.html> [output.gif]
             依赖 Node、Playwright、Google Chrome 和 gifski。首次使用前运行 npm install。
             常用参数：--duration 4 --fps 15 --width 800 --selector .stage --browser chrome --clock realtime
-  cover     执行：node scripts/generate-post-cover.mjs <slug> [options]
+  cover     执行：node scripts/cover/generate.mjs <slug> [options]
             读取文章 front matter 和正文摘要，默认生成 2048x1152 的 cover.png。
             依赖 Node.js 20+、npm install 和环境变量 OPENAI_API_KEY。
             常用参数：--prompt "补充要求" --quality high --force --dry-run
@@ -304,17 +304,17 @@ case "$action" in
     shift
     case "${1:-}" in
       -h|--help|help)
-        exec node "$ROOT_DIR/scripts/capture-html-gif.mjs" --help
+        exec node "$ROOT_DIR/scripts/gif/capture.mjs" --help
         ;;
     esac
     require_command node
     require_command gifski
-    exec node "$ROOT_DIR/scripts/capture-html-gif.mjs" "$@"
+    exec node "$ROOT_DIR/scripts/gif/capture.mjs" "$@"
     ;;
   cover)
     shift
     require_command node
-    exec node "$ROOT_DIR/scripts/generate-post-cover.mjs" "$@"
+    exec node "$ROOT_DIR/scripts/cover/generate.mjs" "$@"
     ;;
   "")
     usage >&2
