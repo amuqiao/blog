@@ -1,0 +1,3762 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>一文读懂 Stable Diffusion + ComfyUI · 一句提示词是怎么变成一张图的</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   设计令牌
+   观感：ComfyUI 的深色画布 + 节点卡片 + 类型连线
+   语义色直接沿用 ComfyUI 的数据类型配色，让「连线颜色」在
+   导航、流程图、正文里指的是同一件事
+   ═══════════════════════════════════════════════════════════ */
+:root{
+  --bg:#14161B;          /* 画布 */
+  --panel:#1D2027;       /* 节点卡片 */
+  --panel2:#232730;      /* 卡片头 / 交替行 */
+  --sunk:#0F1116;        /* 凹陷区：canvas 底、代码块 */
+  --ink:#E9E7E3;
+  --ink2:#C9C6C0;
+  --muted:#9A968E;
+  --faint:#949087;
+  --rule:#2E333C;
+  --rule2:#3B424E;
+
+  /* ComfyUI 数据类型色 —— 全文唯一的用色依据 */
+  --t-model:#B98CFF;     /* MODEL        U-Net 权重 */
+  --t-clip:#F5D76E;      /* CLIP         文本编码器 */
+  --t-cond:#FFA657;      /* CONDITIONING 编码后的提示词 */
+  --t-latent:#FF87C3;    /* LATENT       潜空间张量 */
+  --t-image:#76B5FF;     /* IMAGE        像素图 */
+  --t-vae:#FF8080;       /* VAE          编解码器 */
+  --ok:#5FD08A;
+  --warn:#FF9A6E;
+
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono","Roboto Mono",monospace;
+  --r:10px;
+  --lift:0 1px 0 rgba(255,255,255,.03) inset,0 10px 26px -14px rgba(0,0,0,.8);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{transition-duration:0s !important;animation-duration:0s !important;animation-iteration-count:1 !important}
+}
+/* 深色底不要 -webkit-font-smoothing:antialiased —— 它会让中日韩字形变细、更难读 */
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:16px;line-height:1.9}
+::selection{background:rgba(255,135,195,.28)}
+a{color:var(--t-image)}
+
+/* ═══════════ 布局 ═══════════ */
+.sd-shell{display:grid;grid-template-columns:250px minmax(0,1fr);max-width:1220px;margin:0 auto;gap:0 44px;padding:0 26px}
+main{min-width:0;max-width:880px;padding-bottom:120px}
+
+/* ═══════════ 导航 = ComfyUI 节点链 ═══════════
+   章节画成一串节点，用连线串起来。节点的圆点用它所属阶段的
+   数据类型色，和正文、流程图里的连线是同一套语言。 */
+.sd-rail{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:30px 0 30px;scrollbar-width:thin}
+.sd-rail-hd{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase;padding-left:22px;margin-bottom:14px}
+.sd-chain{position:relative;padding-left:22px}
+.sd-chain::before{content:"";position:absolute;left:6px;top:6px;bottom:6px;width:1px;background:var(--rule2)}
+#sd-flow{position:absolute;left:5px;top:6px;width:3px;height:0;border-radius:2px;
+  background:linear-gradient(180deg,var(--t-model),var(--t-cond) 35%,var(--t-latent) 70%,var(--t-image));transition:height .12s linear}
+.sd-stage{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--faint);text-transform:uppercase;margin:15px 0 6px}
+.sd-stage:first-of-type{margin-top:0}
+.sd-rail a{position:relative;display:block;font-size:12.6px;line-height:1.45;color:var(--muted);text-decoration:none;padding:4px 8px 4px 4px;border-radius:6px}
+.sd-rail a::before{content:"";position:absolute;left:-21px;top:11px;width:9px;height:9px;border-radius:2px;
+  background:var(--bg);border:1px solid var(--rule2);transition:all .15s ease}
+.sd-rail a[data-t=model]::before{border-color:var(--t-model)}
+.sd-rail a[data-t=clip]::before{border-color:var(--t-clip)}
+.sd-rail a[data-t=cond]::before{border-color:var(--t-cond)}
+.sd-rail a[data-t=latent]::before{border-color:var(--t-latent)}
+.sd-rail a[data-t=image]::before{border-color:var(--t-image)}
+.sd-rail a[data-t=vae]::before{border-color:var(--t-vae)}
+.sd-rail a:hover{color:var(--ink);background:var(--panel)}
+.sd-rail a.on{color:var(--ink);font-weight:600;background:var(--panel)}
+.sd-rail a.on::before{width:11px;height:11px;left:-22px;top:10px}
+.sd-rail a[data-t=model].on::before{background:var(--t-model)}
+.sd-rail a[data-t=clip].on::before{background:var(--t-clip)}
+.sd-rail a[data-t=cond].on::before{background:var(--t-cond)}
+.sd-rail a[data-t=latent].on::before{background:var(--t-latent)}
+.sd-rail a[data-t=image].on::before{background:var(--t-image)}
+.sd-rail a[data-t=vae].on::before{background:var(--t-vae)}
+.sd-rail a .no{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-right:5px}
+
+.sd-mininav{display:none;margin:20px 0 4px;border:1px solid var(--rule);border-radius:var(--r);background:var(--panel)}
+.sd-mininav>summary{cursor:pointer;padding:11px 15px;font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);list-style:none}
+.sd-mininav>summary::-webkit-details-marker{display:none}
+.sd-mininav>summary::after{content:" ▾"}
+.sd-mininav .in{padding:2px 15px 13px;border-top:1px solid var(--rule);columns:2;column-gap:18px}
+.sd-mininav a{display:block;font-size:13px;color:var(--muted);text-decoration:none;padding:3px 0;break-inside:avoid}
+.sd-mininav a .no{font-family:var(--mono);font-size:10px;color:var(--faint);margin-right:5px}
+@media (max-width:1000px){
+  .sd-shell{grid-template-columns:1fr;padding:0 18px}
+  .sd-rail{display:none}
+  .sd-mininav{display:block}
+  .sd-mininav .in{columns:1}
+}
+.sd-skip{position:absolute;left:-9999px;top:0;z-index:200;background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:0 0 6px 0;font-size:13px}
+.sd-skip:focus{left:0}
+
+/* ═══════════ 章节与排版 ═══════════ */
+main>section{padding:56px 0 10px;scroll-margin-top:24px}
+main>section+section{border-top:1px solid var(--rule)}
+.sd-tag{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--muted);margin-bottom:9px}
+.sd-tag b{color:var(--ink);font-weight:600}
+h2{font-size:clamp(21px,2.7vw,28px);line-height:1.32;font-weight:700;letter-spacing:-.015em;margin:0 0 8px}
+h3{font-size:16.5px;font-weight:700;margin:32px 0 8px}
+h3::before{content:"◆ ";color:var(--rule2);font-size:11px;vertical-align:2px}
+h4{font-size:14px;font-weight:700;margin:20px 0 6px;color:var(--ink2)}
+p{margin:13px 0;color:var(--ink2)}
+.sd-lead{font-size:16.8px;color:var(--muted);margin:8px 0 24px;max-width:720px}
+ul,ol{margin:13px 0 13px 20px;color:var(--ink2)}
+li{margin:6px 0}
+li::marker{color:var(--faint)}
+strong,b{font-weight:700;color:var(--ink)}
+code{font-family:var(--mono);font-size:.875em;background:var(--sunk);border:1px solid var(--rule);border-radius:4px;padding:1px 5px;color:var(--ink)}
+.sd-m{font-family:var(--mono)}
+/* 数据类型的行内标记 */
+.t-model{color:var(--t-model);font-weight:700}
+.t-clip{color:var(--t-clip);font-weight:700}
+.t-cond{color:var(--t-cond);font-weight:700}
+.t-latent{color:var(--t-latent);font-weight:700}
+.t-image{color:var(--t-image);font-weight:700}
+.t-vae{color:var(--t-vae);font-weight:700}
+
+/* ═══════════ 节点卡片 ═══════════ */
+.sd-card{background:var(--panel);border:1px solid var(--rule);border-radius:var(--r);margin:22px 0;box-shadow:var(--lift);overflow:hidden}
+.sd-card>.hd{background:var(--panel2);border-bottom:1px solid var(--rule);padding:9px 15px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:9px}
+.sd-card>.hd b{color:var(--ink);letter-spacing:.05em}
+.sd-card>.hd .pin{width:8px;height:8px;border-radius:2px;background:var(--rule2);flex:0 0 auto}
+.sd-card>.bd{padding:16px 18px}
+.sd-fig{margin:24px 0}
+.sd-cap{font-size:13px;color:var(--muted);line-height:1.72;margin-top:11px}
+.sd-cap b{color:var(--ink)}
+
+/* ═══════════ 提示块 ═══════════ */
+.sd-key,.sd-side,.sd-bad,.sd-out{border:1px solid var(--rule);border-left-width:3px;border-radius:var(--r);padding:13px 17px;margin:20px 0;font-size:14.6px;line-height:1.76;background:var(--panel)}
+.sd-key{border-left-color:var(--t-latent);background:linear-gradient(90deg,rgba(255,135,195,.07),transparent 60%),var(--panel)}
+.sd-side{border-left-color:var(--t-image);background:linear-gradient(90deg,rgba(118,181,255,.06),transparent 60%),var(--panel)}
+.sd-bad{border-left-color:var(--warn);background:linear-gradient(90deg,rgba(255,154,110,.07),transparent 60%),var(--panel)}
+.sd-out{border-left-color:var(--ok);background:linear-gradient(90deg,rgba(95,208,138,.07),transparent 60%),var(--panel)}
+.sd-lb{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;display:block;margin-bottom:5px}
+.sd-key>.sd-lb{color:var(--t-latent)}
+.sd-side>.sd-lb{color:var(--t-image)}
+.sd-bad>.sd-lb{color:var(--warn)}
+.sd-out>.sd-lb{color:var(--ok)}
+
+/* ═══════════ 栅格 / 表格 / 代码 ═══════════ */
+.sd-g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.sd-g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.sd-g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.sd-g2>*,.sd-g3>*,.sd-g4>*{min-width:0}
+@media (max-width:760px){.sd-g2,.sd-g3,.sd-g4{grid-template-columns:1fr}}
+.sd-x{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;min-width:0}
+main section > div,main section > div > div{min-width:0}
+table.sd-t{width:100%;border-collapse:collapse;font-size:13.4px;background:var(--panel)}
+table.sd-t th,table.sd-t td{border:1px solid var(--rule);padding:9px 11px;text-align:left;vertical-align:top;line-height:1.66}
+table.sd-t th{background:var(--panel2);font-size:12.4px;font-weight:700;white-space:nowrap;color:var(--ink)}
+table.sd-t td.c,table.sd-t th.c{text-align:center}
+table.sd-t tbody tr:hover td{background:var(--panel2)}
+table.sd-t .sd-m{font-size:12.4px}
+pre.sd-code{background:var(--sunk);border:1px solid var(--rule);color:#DCD9D3;border-radius:var(--r);padding:15px 17px;overflow-x:auto;font-family:var(--mono);font-size:12.4px;line-height:1.78;margin:18px 0}
+pre.sd-code b{color:var(--t-clip);font-weight:600}
+pre.sd-code i{color:#8B867C;font-style:normal}
+pre.sd-code u{color:var(--ok);text-decoration:none}
+pre.sd-code em{color:var(--t-cond);font-style:normal}
+pre.sd-flow{background:var(--sunk);border:1px solid var(--rule);border-radius:var(--r);padding:13px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.4px;line-height:1.95;margin:18px 0;color:var(--ink2)}
+
+/* ═══════════ 控件 ═══════════ */
+.sd-ctl{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0}
+.sd-ctl .n{font-family:var(--mono);font-size:11.6px;color:var(--muted);white-space:nowrap}
+input[type=range].sd-sl{-webkit-appearance:none;appearance:none;flex:1;min-width:150px;height:3px;border-radius:2px;background:var(--rule2);outline:none}
+input[type=range].sd-sl::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--ink);border:2px solid var(--bg);cursor:grab;box-shadow:0 0 0 1px var(--rule2)}
+input[type=range].sd-sl::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--ink);border:2px solid var(--bg);cursor:grab}
+input[type=range].sd-sl.latent::-webkit-slider-thumb{background:var(--t-latent)}
+input[type=range].sd-sl.cond::-webkit-slider-thumb{background:var(--t-cond)}
+input[type=range].sd-sl.image::-webkit-slider-thumb{background:var(--t-image)}
+.sd-rd{font-family:var(--mono);font-size:12.2px;background:var(--sunk);border:1px solid var(--rule);border-radius:5px;padding:2px 9px;min-width:66px;text-align:center;white-space:nowrap;color:var(--ink)}
+.sd-b{appearance:none;font:inherit;font-size:12.8px;font-weight:600;color:var(--muted);background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;padding:6px 13px;cursor:pointer;transition:all .14s ease}
+.sd-b:hover{color:var(--ink);border-color:var(--muted)}
+.sd-b.on{color:var(--bg);background:var(--ink);border-color:var(--ink)}
+.sd-b:focus-visible{outline:2px solid var(--t-image);outline-offset:2px}
+.sd-seg{display:inline-flex;border:1px solid var(--rule2);border-radius:6px;overflow:hidden;background:var(--panel2)}
+.sd-seg button{appearance:none;font:inherit;font-size:12.8px;font-weight:600;color:var(--muted);background:none;border:0;border-right:1px solid var(--rule2);padding:7px 14px;cursor:pointer}
+.sd-seg button:last-child{border-right:0}
+.sd-seg button.on{background:var(--ink);color:var(--bg)}
+.sd-seg button:focus-visible{outline:2px solid var(--t-image);outline-offset:-2px}
+.sd-in{font-family:var(--mono);font-size:12.8px;width:100%;padding:6px 9px;border:1px solid var(--rule2);border-radius:5px;background:var(--sunk);color:var(--ink)}
+.sd-in:focus{outline:2px solid var(--t-image);outline-offset:-1px}
+.sd-fl{display:block;font-size:11.6px;color:var(--muted);margin-bottom:4px}
+.sd-fl b{color:var(--ink);font-weight:700}
+.sd-tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--rule);background:var(--panel2)}
+.sd-tabs button{appearance:none;border:0;background:none;font:inherit;font-size:13.2px;font-weight:600;color:var(--muted);padding:11px 16px;cursor:pointer;border-bottom:2px solid transparent}
+.sd-tabs button:hover{color:var(--ink)}
+.sd-tabs button.on{color:var(--ink);border-bottom-color:var(--t-latent);background:var(--panel)}
+.sd-tabs button:focus-visible{outline:2px solid var(--t-image);outline-offset:-2px}
+.sd-tabbody{padding:18px 20px}
+.sd-steps{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 16px}
+.sd-steps button{appearance:none;font:inherit;font-family:var(--mono);font-size:11.6px;font-weight:600;color:var(--muted);background:var(--panel2);border:1px solid var(--rule2);border-radius:5px;padding:5px 10px;cursor:pointer}
+.sd-steps button.on{color:var(--bg);background:var(--ink);border-color:var(--ink)}
+.sd-steps button.past{color:var(--ink);border-color:var(--muted)}
+.sd-steps button:focus-visible{outline:2px solid var(--t-image);outline-offset:2px}
+
+/* ═══════════ canvas ═══════════ */
+.sd-canvas{display:block;background:var(--sunk);border:1px solid var(--rule);border-radius:8px;max-width:100%}
+.sd-canvas.px{image-rendering:pixelated}
+.sd-shots{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.sd-shot{text-align:center}
+.sd-shot .lb{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:7px;display:block}
+
+/* ═══════════ 节点流程图 ═══════════ */
+svg.sd-svg{display:block;width:100%;height:auto;overflow:visible}
+svg.sd-svg text{font-family:var(--sans);fill:var(--ink2)}
+svg.sd-svg text.m{font-family:var(--mono)}
+.sd-node{cursor:pointer}
+.sd-node rect.box{fill:var(--panel);stroke:var(--rule2);stroke-width:1}
+.sd-node:hover rect.box{stroke:var(--muted)}
+.sd-node.on rect.box{stroke:var(--ink);stroke-width:2}
+.sd-node:focus-visible rect.box{stroke:var(--t-image);stroke-width:2.4}
+.sd-node text.tt{fill:var(--ink);font-size:12px;font-weight:650}
+.sd-node text.st{fill:var(--muted);font-size:10px;font-family:var(--mono)}
+
+/* ═══════════ 展开 / 测验 ═══════════ */
+details.sd-more{border:1px solid var(--rule);border-radius:var(--r);background:var(--panel);margin:20px 0;overflow:hidden}
+details.sd-more>summary{cursor:pointer;padding:11px 16px;font-size:13.8px;font-weight:650;color:var(--ink2);list-style:none;background:var(--panel2);display:flex;gap:8px;align-items:baseline}
+details.sd-more>summary::-webkit-details-marker{display:none}
+details.sd-more>summary::before{content:"+";font-family:var(--mono);color:var(--faint)}
+details.sd-more[open]>summary::before{content:"–"}
+details.sd-more .bd{padding:2px 16px 14px;border-top:1px solid var(--rule)}
+.sd-qz{border:1px solid var(--rule);border-radius:var(--r);background:var(--panel);padding:15px 17px;margin:14px 0}
+.sd-qz .ask{font-weight:650;font-size:14.8px;margin-bottom:9px}
+.sd-qz .ask .no{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-right:7px}
+.sd-op{display:block;width:100%;text-align:left;font:inherit;font-size:13.8px;color:var(--ink2);background:var(--panel2);border:1px solid var(--rule2);border-radius:6px;padding:8px 12px;margin:6px 0;cursor:pointer;transition:all .14s ease}
+.sd-op:hover{border-color:var(--muted)}
+.sd-op:focus-visible{outline:2px solid var(--t-image);outline-offset:2px}
+.sd-op.yes{border-color:var(--ok);background:rgba(95,208,138,.12);color:var(--ink)}
+.sd-op.no{border-color:var(--warn);background:rgba(255,154,110,.12);color:var(--ink)}
+.sd-op .mk{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-right:7px}
+.sd-why{font-size:13.2px;color:var(--muted);line-height:1.74;margin-top:8px;display:none}
+.sd-why.show{display:block}
+.sd-why b{color:var(--ink)}
+
+/* ═══════════ 首屏 ═══════════ */
+.sd-top{padding:50px 0 40px;border-bottom:1px solid var(--rule)}
+.sd-kick{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--muted);text-transform:uppercase}
+.sd-top h1{font-size:clamp(28px,4.2vw,42px);line-height:1.16;font-weight:800;letter-spacing:-.022em;margin:13px 0 0}
+.sd-top h1 .lt{display:inline-block;margin-top:6px;font-size:.56em;line-height:1.3;color:var(--muted);font-weight:500}
+.sd-ask{margin:22px 0 0;padding:0 0 0 15px;border-left:3px solid var(--t-latent);font-size:clamp(17px,2.2vw,21px);font-weight:650;line-height:1.5;color:var(--ink)}
+.sd-sub{color:var(--muted);max-width:690px;margin-top:16px;font-size:15.2px}
+.sd-facts{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:20px}
+.sd-stage-box{margin-top:26px;background:var(--panel);border:1px solid var(--rule);border-radius:12px;box-shadow:var(--lift);padding:16px 18px 14px}
+.sd-stage-box .hint{font-family:var(--mono);font-size:11.6px;color:var(--muted);margin-bottom:14px}
+.sd-stage-box .hint b{color:var(--t-latent)}
+.sd-hero-wrap{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:22px;align-items:start}
+.sd-hero-wrap>*{min-width:0}
+@media (max-width:820px){.sd-hero-wrap{grid-template-columns:minmax(0,1fr)}}
+.sd-hero-read{font-size:13.6px;color:var(--ink2);line-height:1.75;overflow-wrap:anywhere}
+.sd-hero-read .big{font-family:var(--mono);font-size:22px;font-weight:700;color:var(--ink);display:block;margin-bottom:4px}
+.sd-hero-read .dim{color:var(--muted);font-size:12.6px;margin-top:10px;display:block}
+.sd-meter{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.sd-meter .row{display:grid;grid-template-columns:72px minmax(0,1fr) 54px;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.sd-meter .tr{height:8px;border-radius:5px;background:var(--sunk);border:1px solid var(--rule);overflow:hidden}
+.sd-meter .fi{height:100%;border-radius:5px}
+
+footer.sd-end{border-top:1px solid var(--rule);margin-top:44px;padding:24px 0 0;font-family:var(--mono);font-size:11.6px;color:var(--faint);line-height:1.8}
+
+/* ═══════════════════════════════════════════════════════════
+   以下由各章节片段注入
+   ═══════════════════════════════════════════════════════════ */
+
+/* ==== 10-open.css ==== */
+/* ==== 10-open：01 起点 · 02 取舍 ==== */
+#question .sd-a-metric,
+#why-steps .sd-a-metric{
+  font-family:var(--mono);
+  font-weight:700;
+  color:var(--t-latent);
+  white-space:nowrap;
+}
+#question #sd-a-nodeinfo{
+  margin-top:14px;
+  min-height:74px;
+}
+#why-steps #sd-a-onestep-host{
+  margin:12px 0 4px;
+  display:flex;
+}
+#why-steps #sd-a-onestep-host canvas{
+  margin:0 auto;
+}
+
+/* ==== 20-core.css ==== */
+/* ============================================================
+   20-core.css —— 第 03 节（denoise）+ 第 04 节（latent）
+   命名前缀：sd-b-　；选择器均以 #denoise / #latent 为祖先限定
+   ============================================================ */
+
+/* ── 03 · 对照台：schedule 数值读数 ── */
+#denoise .sd-b-mk{font-size:13.4px;color:var(--ink2);line-height:1.72}
+#denoise .sd-b-mk .sd-b-val{font-family:var(--mono);font-weight:700;color:var(--ink);margin:0 2px}
+#denoise .sd-b-mk .sd-b-sub{color:var(--muted);font-size:12.4px}
+#denoise .sd-b-mk.sd-b-linear b{color:var(--t-image)}
+#denoise .sd-b-mk.sd-b-cosine b{color:var(--t-latent)}
+
+/* ── 03 · ᾱ_t 折线图 ── */
+#denoise .sd-b-chart-wrap{margin-top:14px;min-width:420px}
+#denoise .sd-b-axis{stroke:var(--rule);stroke-width:1}
+#denoise .sd-b-axis-tx{fill:var(--faint)}
+#denoise .sd-b-mkline{stroke:var(--ink);stroke-width:1.2;stroke-dasharray:2 3}
+
+/* ── 04 · 压缩率计算器 ── */
+#latent .sd-b-errline{color:var(--warn);font-size:12.6px;line-height:1.6;min-height:18px}
+#latent td.sd-b-num{font-family:var(--mono);font-size:13px}
+#latent tr.sd-b-row-latent td{color:var(--t-latent)}
+
+/* ==== 30-pipeline.css ==== */
+/* ==== 30-pipeline.css (namespace: sd-c-) ==== */
+.sd-c-row{display:flex;gap:12px;padding:7px 0;border-bottom:1px solid var(--rule)}
+.sd-c-row:last-child{border-bottom:0}
+.sd-c-row .k{flex:0 0 96px;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.sd-c-row .v{flex:1;font-size:13.6px;color:var(--ink2);line-height:1.66}
+.sd-c-hi{outline:2px solid var(--sd-c-accent,var(--ink));outline-offset:2px;border-radius:var(--r)}
+.sd-c-skip{fill:none;stroke:var(--rule2);stroke-width:1.3;stroke-dasharray:4 3}
+.sd-c-xdot{fill:var(--t-cond)}
+/* 两张节点图各自的详情比较密，窄屏时与其无限压扁到不可读，不如设一个下限宽度，
+   交给共享的 .sd-x 横向滚动（较宽的桌面视口下 min-width 不生效，仍然 100% 撑满容器）。 */
+#pipeline #sd-c-graph1 svg.sd-svg{min-width:680px}
+#checkpoint #sd-c-graph2 svg.sd-svg{min-width:460px}
+
+/* ==== 40-clip.css ==== */
+/* ═══════════ 07 CLIP：分词 / 77 槽位 / 权重 ═══════════ */
+#clip .sd-d-slots{display:grid;grid-template-columns:repeat(auto-fill,17px);gap:3px;padding:12px;background:var(--sunk);border:1px solid var(--rule);border-radius:8px}
+#clip .sd-d-cell{width:17px;height:17px;border-radius:3px;background:var(--panel2);border:1px solid var(--rule2);display:flex;align-items:center;justify-content:center;font-size:7.5px;font-family:var(--mono);color:var(--muted);overflow:hidden;line-height:1}
+#clip .sd-d-cell.bos,#clip .sd-d-cell.eos{border-color:var(--muted);color:var(--ink2);font-weight:700}
+#clip .sd-d-cell.content{background:rgba(245,215,110,.16);border-color:var(--t-clip);color:var(--ink)}
+#clip .sd-d-cell.frag{background:rgba(245,215,110,.06);border-style:dashed}
+#clip .sd-d-cell.weighted{box-shadow:inset 0 0 0 1px var(--t-cond)}
+#clip .sd-d-cell.empty{opacity:.32}
+
+#clip .sd-d-overflow{margin-top:10px;padding:10px 12px;border:1px dashed var(--warn);border-radius:8px;background:rgba(255,154,110,.07)}
+#clip .sd-d-ovlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+#clip .sd-d-ovchip{font-family:var(--mono);font-size:11px;color:var(--warn);background:var(--sunk);border:1px solid var(--warn);border-radius:5px;padding:2px 7px}
+
+#clip .sd-d-weights{display:flex;align-items:flex-end;gap:2px;height:46px;padding:8px 10px;background:var(--sunk);border:1px solid var(--rule);border-radius:8px;overflow-x:auto}
+#clip .sd-d-wbar{flex:0 0 auto;width:8px;min-height:2px;border-radius:2px 2px 0 0;background:var(--t-clip)}
+#clip .sd-d-wbar.hi{background:var(--t-cond)}
+#clip .sd-d-wbar.lo{background:var(--muted)}
+
+/* ═══════════ 08 CFG：向量合成 / 画面模拟 ═══════════ */
+#cfg .sd-d-cfgsvg{background:var(--sunk);border:1px solid var(--rule);border-radius:8px;padding:4px}
+#cfg .sd-d-cfgsvg svg{display:block;width:100%;height:auto;overflow:visible}
+#cfg .sd-d-cfgsvg text{font-family:var(--mono);font-size:10.5px;fill:var(--ink2)}
+#cfg .sd-d-cfgimg{display:inline-block}
+
+/* ==== 50-seed.css ==== */
+/* ═══════ 09 · seed ═══════ */
+#seed .sd-e-shape{font-family:var(--mono);font-size:13.6px;color:var(--ink2);margin-top:12px}
+#seed .sd-e-shape b{color:var(--t-latent)}
+#seed .sd-e-err{margin-top:10px}
+#seed .sd-e-num{max-width:130px}
+#seed .sd-e-seedin{max-width:180px}
+
+/* ═══════ 10 · sampler ═══════ */
+#sampler .sd-e-legend{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--mono);font-size:11.6px;color:var(--muted);margin:4px 0 10px;align-items:center}
+#sampler .sd-e-legend .sw{display:inline-flex;align-items:center;gap:7px}
+#sampler .sd-e-legend .ln{width:22px;height:0;border-top:2px solid;display:inline-block}
+#sampler .sd-e-ln-lin{border-color:var(--t-image)}
+#sampler .sd-e-ln-cos{border-color:var(--t-latent);border-top-style:dashed}
+
+/* ==== 60-steps.css ==== */
+/* ==== 60-steps：11 steps/denoise · 12 VAE 解码 ==== */
+#steps .sd-f-err{
+  font-family:var(--mono);
+  font-size:12.4px;
+  color:var(--warn);
+  min-height:1.4em;
+  margin:8px 0 0;
+}
+#steps #sd-f-fc-out{
+  font-family:var(--mono);
+  font-size:13.4px;
+  color:var(--ink2);
+  line-height:1.9;
+  margin:10px 0 0;
+}
+#steps #sd-f-fc-out b{color:var(--t-latent)}
+#steps #sd-f-conv-host .sd-shot .lb{max-width:120px}
+#vae #sd-f-vae-host .sd-shot .lb{max-width:120px}
+#steps .sd-ctl > label.n{margin-right:-4px}
+
+/* ==== 70-params.css ==== */
+/* ==== 70-params：13 参数总表 · 14 排障决策链 ==== */
+
+/* -- 13 · 参数总表：一次只动一个 -- */
+#params tr.sd-g-hl td{
+  background:rgba(255,135,195,.16);
+}
+#params #sd-g-oncenote{
+  margin-top:12px;
+  padding:11px 14px;
+  border:1px solid var(--rule);
+  border-left:3px solid var(--t-latent);
+  border-radius:8px;
+  background:var(--panel2);
+  font-size:13.6px;
+  line-height:1.74;
+  color:var(--ink2);
+}
+#params #sd-g-oncenote code{
+  white-space:nowrap;
+}
+
+/* -- 14 · 排障决策链 -- */
+#debug tr.sd-g-hl td{
+  background:rgba(118,181,255,.14);
+}
+#debug details.sd-g-symdet{
+  margin:14px 0;
+}
+#debug details.sd-g-symdet details.sd-g-symdet{
+  margin:12px 0 4px;
+  background:var(--sunk);
+}
+#debug details.sd-g-symdet .sd-g2 h4{
+  margin-top:0;
+}
+#debug details.sd-g-symdet .sd-g2 .sd-cap{
+  margin-top:6px;
+}
+
+/* ==== 80-close.css ==== */
+/* ==== 80-close：15 校准 · 16 收口 ==== */
+#pitfalls .sd-h-score{
+  margin-top:10px;
+  font-family:var(--mono);
+  font-size:12.4px;
+  color:var(--muted);
+}
+#pitfalls .sd-h-score b{
+  color:var(--ink);
+  font-weight:700;
+}
+#recap .sd-g3 .sd-card{
+  margin:0;
+}
+#recap .sd-g3 .sd-card>.bd ul{
+  margin:6px 0 2px 18px;
+}
+#recap .sd-g3 .sd-card>.bd li{
+  margin:7px 0;
+  font-size:13.4px;
+  line-height:1.68;
+}
+</style>
+</head>
+<body>
+<a class="sd-skip" href="#question">跳到正文</a>
+<div class="sd-shell">
+
+<nav class="sd-rail" aria-label="章节导航">
+  <div class="sd-rail-hd">ComfyUI · workflow</div>
+  <div class="sd-chain">
+    <div id="sd-flow" aria-hidden="true"></div>
+    <div class="sd-stage">原理</div>
+    <a href="#question" data-t="image"><span class="no">01</span>一句提示词到一张图</a>
+    <a href="#why-steps" data-t="latent"><span class="no">02</span>为什么不能一步生成</a>
+    <a href="#denoise" data-t="latent"><span class="no">03</span>第一因：学会减掉噪声</a>
+    <a href="#latent" data-t="latent"><span class="no">04</span>为什么在潜空间做</a>
+    <div class="sd-stage">流水线</div>
+    <a href="#pipeline" data-t="model"><span class="no">05</span>六个节点，一条数据流</a>
+    <a href="#checkpoint" data-t="model"><span class="no">06</span>Load Checkpoint 装了什么</a>
+    <a href="#clip" data-t="clip"><span class="no">07</span>CLIP 与 77 个 token</a>
+    <a href="#cfg" data-t="cond"><span class="no">08</span>正负提示词与 CFG</a>
+    <a href="#seed" data-t="latent"><span class="no">09</span>Empty Latent 与 seed</a>
+    <a href="#sampler" data-t="latent"><span class="no">10</span>KSampler：sigma 与采样器</a>
+    <a href="#steps" data-t="latent"><span class="no">11</span>steps 与 denoise</a>
+    <a href="#vae" data-t="vae"><span class="no">12</span>VAE 解码与发灰发糊</a>
+    <div class="sd-stage">上手</div>
+    <a href="#params" data-t="cond"><span class="no">13</span>参数总表</a>
+    <a href="#debug" data-t="image"><span class="no">14</span>排障决策链</a>
+    <a href="#pitfalls" data-t="image"><span class="no">15</span>误区与归位测验</a>
+    <a href="#recap" data-t="image"><span class="no">16</span>速查表</a>
+  </div>
+</nav>
+
+<main>
+
+<header class="sd-top">
+  <div class="sd-kick">Stable Diffusion · ComfyUI</div>
+  <h1>一文读懂 Stable Diffusion<br><span class="lt">跟着 ComfyUI 的数据流走一遍文生图</span></h1>
+  <p class="sd-ask">一句提示词，是怎么变成一张图的？</p>
+  <p class="sd-sub">它不是「画」出来的。模型从一团<b>纯随机噪声</b>出发，按提示词的指引，一步步把不该有的东西<b>减掉</b>——去噪不是往上加细节，是做减法。这篇沿 ComfyUI 的六个节点走一遍，每个节点讲清它在做什么，以及挂在它上面的那些参数，动一下会发生什么。</p>
+  <div class="sd-stage-box">
+    <div class="hint">拖动时间轴看同一张图在不同噪声水平下的样子。<b>t 越大噪声越多</b>；生成就是从最右端一路走回最左端。这里播放的是把前向加噪公式倒过来放，<b>不是真的在跑模型采样</b>——它只帮你建立「噪声占比」的直觉。</div>
+    <div class="sd-hero-wrap">
+      <div id="sd-hero-canvas"></div>
+      <div>
+        <div class="sd-hero-read" id="sd-hero-read" role="status" aria-live="polite"></div>
+        <div class="sd-meter" id="sd-hero-meter"></div>
+        <div class="sd-ctl" style="margin-top:14px">
+          <label class="n" for="sd-hero-t">t</label>
+          <input id="sd-hero-t" class="sd-sl latent" type="range" min="0" max="999" step="1" value="999" aria-label="扩散时间步 t，0 为原图，999 为纯噪声">
+          <span class="sd-rd" id="sd-hero-trd">t = 999</span>
+          <button class="sd-b" id="sd-hero-play" type="button">▶ 播放去噪</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="sd-facts"><span>16 节</span><span>单文件 · 离线可读</span><span>演示均为公式实算的示意，非模型输出</span></div>
+</header>
+
+<details class="sd-mininav">
+  <summary>章节导航</summary>
+  <div class="in">
+    <a href="#question"><span class="no">01</span>一句提示词到一张图</a>
+    <a href="#why-steps"><span class="no">02</span>为什么不能一步生成</a>
+    <a href="#denoise"><span class="no">03</span>第一因：学会减掉噪声</a>
+    <a href="#latent"><span class="no">04</span>为什么在潜空间做</a>
+    <a href="#pipeline"><span class="no">05</span>六个节点，一条数据流</a>
+    <a href="#checkpoint"><span class="no">06</span>Load Checkpoint 装了什么</a>
+    <a href="#clip"><span class="no">07</span>CLIP 与 77 个 token</a>
+    <a href="#cfg"><span class="no">08</span>正负提示词与 CFG</a>
+    <a href="#seed"><span class="no">09</span>Empty Latent 与 seed</a>
+    <a href="#sampler"><span class="no">10</span>KSampler：sigma 与采样器</a>
+    <a href="#steps"><span class="no">11</span>steps 与 denoise</a>
+    <a href="#vae"><span class="no">12</span>VAE 解码与发灰发糊</a>
+    <a href="#params"><span class="no">13</span>参数总表</a>
+    <a href="#debug"><span class="no">14</span>排障决策链</a>
+    <a href="#pitfalls"><span class="no">15</span>误区与归位测验</a>
+    <a href="#recap"><span class="no">16</span>速查表</a>
+  </div>
+</details>
+
+
+<!-- ==== 10-open.html ==== -->
+<section id="question">
+<span class="sd-tag">[ 01 · 起点 ]</span>
+<h2>一句提示词，中间发生了什么</h2>
+<p class="sd-lead">在 ComfyUI 里敲一句 <code>a sunset over mountains, calm lake</code>，点 Queue，几秒后一张 512×512 的图出现在屏幕上。这几秒钟里，到底发生了什么？</p>
+
+<p>先把这件事的难度摆具体。一张 512×512 的图由 <b class="sd-a-metric" id="sd-a-pxcount">786,432</b> 个数字组成——每个像素 3 个通道（R/G/B），每个通道取值 0~255。这些数字能摆出的组合数量，量级是 <b class="sd-a-metric" id="sd-a-space">10^1,893,917</b>；而这堆组合里「看起来像一张自然的日落风景」的那一小撮，在这个天文数字般的空间里比一粒尘埃还小。要一个网络凭一句话直接猜中这一撮、一次到位，是不现实的——这正是全文要解决的问题。</p>
+
+<div class="sd-key">
+<span class="sd-lb">关键心智模型</span>
+生成一张图，不是「从零开始画对」，而是从这个巨大的候选空间里，一步步排除不像的可能，直到落进那一小撮里。这是「减法」而非「加法」的由来——第 03 节会把这句话钉死成一个可验证的公式。
+</div>
+
+<p>先划清这篇的范围：讲的是<b>文生图（txt2img）</b>的主干——一句话进去，一张图出来，中间网络怎么把噪声变成图像。模型是怎么训出来的、LoRA / ControlNet 这类往流程里插东西的扩展、拿一张已有图接着改的图生图，都不在这篇里。先把主干走通，边界自然清楚。</p>
+
+<p>这几秒钟不是一个黑盒，而是一条<b>流水线</b>。ComfyUI 把它明明白白画成了几个方块——点 Queue 时，数据真的按这个顺序从一个方块流到下一个。下面是它的全景图，点开任意节点看它具体负责什么；后面每一节，都对应其中一个方块。</p>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span>WORKFLOW <b>极简全景图</b></div>
+<div class="bd">
+<div id="sd-a-graph"></div>
+<div class="sd-side" id="sd-a-nodeinfo">
+<span class="sd-lb">节点职责</span>
+点击任意节点，看它具体负责什么、以及本文第几节会展开讲它。
+</div>
+</div>
+</div>
+<p class="sd-cap">这张图是全文的地图：先看全貌，不展开细节——每个节点具体怎么运作，是后面每一节的事。</p>
+
+<div class="sd-out">
+<span class="sd-lb">本节收束</span>
+「生成一张图」被拆成了流水线上的具体节点。接下来第一个要回答的问题是：为什么不能让网络一步吐出答案，非要拆成很多步？下一节说清楚这背后的取舍。
+</div>
+</section>
+
+<section id="why-steps">
+<span class="sd-tag">[ 02 · 取舍 ]</span>
+<h2>为什么不能一步生成</h2>
+<p class="sd-lead">上一节留了一个问题：候选空间这么大，为什么不干脆训练一个网络，输入一句话直接吐出图像？</p>
+
+<p>一步到位，等于要网络学会一个从「随机数」到「自然图像」的映射——这个映射极度复杂，训练信号也很难给：你没法直接告诉网络「这张图错在哪、该往哪个方向改一点」。（GAN 走的是另一条路，靠一个判别器打分当训练信号，代价是训练不稳、容易模式坍缩——这里只作一句对照，不展开。）</p>
+
+<div class="sd-key">
+<span class="sd-lb">扩散模型的立意</span>
+把一个做不到的难题，换成几十个几乎一样、都很容易的小题。每一步只需要回答「这张有点糊的图上，噪声大概长什么样」——这个问题简单到可以用海量数据直接监督。
+</div>
+
+<p>训练样本怎么造，答案很朴素：拿一张真图 <code>x₀</code>，随机挑一个时间步 <code>t</code>，按 <code>x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε</code> 把它和一份随机噪声 <code>ε</code> 混合，网络输入 <code>x_t</code> 和 <code>t</code>，标签就是 <code>ε</code> 本身。这一步不需要人工标注——训练数据近乎无限（网上任意一张图都能造），标签是免费的（噪声自己加的，天然已知）。这正是扩散模型能被训起来的关键。</p>
+
+<div class="sd-bad">
+<span class="sd-lb">代价</span>
+把难题拆细的代价是要跑很多次。一次生成 = 网络前向 N 次（还要乘 CFG 的两遍，正负提示词各算一次），这就是文生图比一次分类慢好几个数量级的原因。这个 N，也就是 <code>steps</code>，会在第 10、11 节变成一个你能亲手调的参数。
+</div>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span>对照 <b>一步 vs 多步</b></div>
+<div class="bd">
+<div class="sd-g2">
+<div>
+<h4>一次跨到底</h4>
+<div class="sd-ctl">
+<label class="n" for="sd-a-onestep-range">完成度</label>
+<input id="sd-a-onestep-range" class="sd-sl latent" type="range" min="0" max="100" step="1" value="0" aria-label="一次性跳跃的完成度百分比">
+<span class="sd-rd" id="sd-a-onestep-rd">0%</span>
+</div>
+<div id="sd-a-onestep-host"></div>
+<p class="sd-cap" id="sd-a-onestep-read"></p>
+</div>
+<div>
+<h4>拆成很多小步</h4>
+<div class="sd-x"><div class="sd-shots" id="sd-a-multistep"></div></div>
+<p class="sd-cap">这里只挑了 6 个代表性时刻方便并排展示；真实采样通常拆成 20~50 步，密度比这里高得多，相邻两步之间的差别也小得多——网络每一步只需要学会「擦掉一层薄噪声」，而不是凭空画出整张图。这里画的是把前向加噪公式反过来看的结果，真实采样是网络逐步预测噪声再减掉，形状类似但不完全相同。</p>
+</div>
+</div>
+</div>
+</div>
+
+<div class="sd-out">
+<span class="sd-lb">本节收束</span>
+把「一步蒙对」换成「学会擦掉一层薄噪声、然后重复」——这正是下一节要钉死的第一因。
+</div>
+</section>
+
+<!-- ==== 20-core.html ==== -->
+<section id="denoise">
+<span class="sd-tag">[ 03 · 第一因 ]</span>
+<h2>学会「减掉一点噪声」，然后重复</h2>
+<p class="sd-lead">上一节说清楚了为什么要把生成拆成几十步小任务。这一节回答更根本的问题：模型每一步到底在学什么。答案只有一句话，但后面每一节都在围着它转。</p>
+
+<div class="sd-key"><span class="sd-lb">第一因</span>模型学会的只有一个动作：给它一张带噪声的图和一个噪声水平 <b>t</b>，它输出「我认为这上面的噪声长什么样」。生成，就是从一团纯噪声出发，把这一个动作重复几十次，每次减掉预测出来的那一点点噪声。<strong>它不是在画，是在擦。</strong></div>
+
+<h3>前向加噪与反向去噪，是同一件事的两个方向</h3>
+<p>训练时不需要真的把图一步步弄脏。有一条公式能直接把干净图 x<sub>0</sub> 一步跳到任意噪声水平 t，这也是训练能高效造样本的原因——不用真的模拟 t 次加噪。生成时反过来，从纯噪声 x<sub>T</sub> 出发，只能老老实实一步步走回来，因为每一步要用的是网络刚刚给出的那个预测，无法预先知道。</p>
+
+<div class="sd-side"><span class="sd-lb">一个记号上的提醒</span>这里写的 x 是「被加噪的那个东西」。在 Stable Diffusion 里，它<b>不是像素图</b>，而是潜空间里的张量，通常记作 <span class="t-latent">z</span>。整套加噪去噪的数学一字不改，只是舞台从 512×512×3 换成了小得多的 64×64×4——下一节就讲为什么要换。本节的插图为了直观仍画在像素上，读的时候心里换成 z 即可。</div>
+<pre class="sd-code"><i>// 前向：训练用，一步跳到任意 t</i>
+x<sub>t</sub> = <u>√ᾱ<sub>t</sub></u> · x<sub>0</sub> + <u>√(1−ᾱ<sub>t</sub>)</u> · ε        <i>ε ~ N(0, I)</i>
+
+<i>// 反向：生成用，只能逐步走</i>
+x<sub>T</sub> ~ N(0, I)
+<b>for</b> t = T … 1:
+    ε̂ = <em>ε_θ</em>(x<sub>t</sub>, t)          <i>// 网络：我猜这里的噪声长这样</i>
+    x<sub>t−1</sub> = 用 ε̂ 把 x<sub>t</sub> 往干净图推一小步</pre>
+
+<h3>预测出噪声之后，为什么不一次减完</h3>
+
+<p>既然网络已经告诉你「噪声长这样」，把它一次全减掉不就完事了？这一步确实可以做，而且有个名字：把 <span class="sd-m">ε̂</span> 代回前向公式反解，就得到一个<b>一步到位的成品猜测</b></p>
+
+<pre class="sd-code"><i>// 一次全减完，直接得到「它以为的干净图」</i>
+x̂<b>₀</b> = ( x<b>_t</b> − √(1−ᾱ<b>_t</b>) · ε̂ ) / √ᾱ<b>_t</b></pre>
+
+<p>问题在于：噪声很大的时候，这个 <span class="sd-m">x̂₀</span> <b>必然是模糊的</b>。网络此刻只能看出「大概是个日落、山在左边」，看不出任何细节，所以它反解出来的成品猜测也就只有这么多信息。不过<b>这一点页面上的演示替不了你验证</b>：首屏那个滑块展示的是「画面被噪声盖住多少」，而 x̂₀ 模糊是另一回事——它是网络在信息不足时给出的重建上限。两者方向一致，但不是同一件事。</p>
+
+<div class="sd-key"><span class="sd-lb">第一因的下半句</span>所以真实的做法不是一次减完，而是：<b>算出这个成品猜测，然后只朝它走一小步</b>，再用新的位置重新问一遍网络。走一小步之后噪声少了一点，网络看得清一点，下一次的猜测就更准一点。<b>「多步」的收益全部来自这里</b>——不是把噪声分几次减，而是让网络有机会反复修正自己的判断。这一小步要迈多远、怎么迈，被 KSampler 拆成了两个互相独立的决定——<b>噪声表决定这一步跨越多大的噪声落差，采样器决定在这段落差里怎么走</b>。第 10 节把这两件事分开讲。</div>
+
+<h3>为什么预测噪声，而不是直接预测图</h3>
+<p>直觉是这样的：噪声 ε 的分布是已知且固定的——标准正态，均值为 0，各分量独立同分布。而「干净图长什么样」的分布，正是模型要学的全部难点所在。把训练目标换成噪声，等于把一个开放性的生成问题，转化成了一个有固定基准的残差回归问题：网络不用凭空猜图，只需要猜「这张脏图比干净图多出来的那部分」，这个目标更规整，也更容易训。</p>
+<div class="sd-side"><span class="sd-lb">诚实说明</span>业内也有直接预测 x<sub>0</sub>、或预测两者组合 v 的参数化方式，它们和 ε-prediction 在数学上可以互相换算，选哪种主要影响训练稳定性。这里只讲最常见、最容易讲清楚的 ε-prediction，后面各节的公式也都基于它。</div>
+
+<h3>noise schedule：ᾱ<sub>t</sub> 这张表怎么定噪声进度</h3>
+<p>公式里的 ᾱ<sub>t</sub> 是一张查表得到的数，t 从 0 到 T 依次取值，决定每一步该混入多少噪声。原始 DDPM 用的是最直白的办法：让每步新增的噪声量 β 线性增长。后来有人发现这张表有个问题——不用听我说，下面这个对照台可以亲眼验证。</p>
+
+<div class="sd-card sd-b-compare">
+  <div class="hd"><span class="pin"></span><b>同一个 t，两种 schedule</b>——对照台</div>
+  <div class="bd">
+    <div class="sd-shots">
+      <div class="sd-shot"><div id="sd-b-cv-linear"></div><span class="lb">线性（原始 DDPM）</span></div>
+      <div class="sd-shot"><div id="sd-b-cv-cosine"></div><span class="lb">余弦</span></div>
+    </div>
+    <div class="sd-ctl">
+      <label class="n" for="sd-b-t">t</label>
+      <input id="sd-b-t" class="sd-sl latent" type="range" min="0" max="999" step="1" value="400" aria-label="扩散时间步 t，两侧画面共用同一个 t 与同一份噪声">
+      <span class="sd-rd" id="sd-b-trd">t = 400</span>
+    </div>
+    <div class="sd-g2" id="sd-b-stats" aria-live="polite"></div>
+    <div class="sd-fig">
+      <div class="sd-x"><div id="sd-b-chart"></div></div>
+      <p class="sd-cap">两条曲线是 ᾱ<sub>t</sub> 随 t 变化的轨迹（虚线 = 线性，实线 = 余弦），竖线标出当前 t。<b>同样是 t = 400，线性表的信号已经所剩无几，余弦表还留着能辨认的轮廓</b>——这正是余弦表被提出来的原因：线性表在 t 还不到一半时就几乎把信号毁光了。</p>
+    </div>
+  </div>
+</div>
+
+<div class="sd-bad"><span class="sd-lb">误区</span>「去噪就是把图变清晰，像 Photoshop 的降噪滤镜」——不对。滤镜是在一张已经存在的图上做平滑，抹掉的是画面里本来就有的噪点；这里发生的事情性质不同：从一团什么都没有的纯噪声出发，一步步减出一张原本并不存在的图。每一步该减掉什么，由提示词决定，这是第 07、08 节的内容。</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>模型在学什么、生成在做什么，说清楚了。但这两条公式没规定这几十步的计算要在哪个空间里跑——下一节看为什么不在原始像素上做，而是先把图压进一个小得多的潜空间。</div>
+</section>
+
+<section id="latent">
+<span class="sd-tag">[ 04 · 潜空间 ]</span>
+<h2>为什么不在像素上做，而在潜空间里做</h2>
+<p class="sd-lead">上一节讲清楚了每一步在做什么；这一节讲清楚这几十步到底在哪算的，以及 Stable Diffusion 名字里的「Latent」从哪来。</p>
+
+<p>把第 03 节的公式在 512×512×3 的像素网格上跑一遍并不便宜，而生成要重复几十步、每步都要完整过一遍 U-Net（去噪主干网络）。Stable Diffusion 的做法是不在像素上做这件事：先用 VAE 的编码器把图压成一个小得多的表示，全部去噪都在这个小表示里进行，最后再用 VAE 的解码器把结果变回像素。这个小得多的表示，就是「潜空间」（latent space）——模型名字里 <b>Latent</b> 的由来，也是它能在消费级显卡上跑起来的直接原因。</p>
+<p>换算成数字更直观：512×512×3 是 786,432 个数，64×64×4 只有 16,384 个数，两者相差 <b>48 倍</b>——空间边长压缩了 8 倍（512÷64），通道数从 3 变成 4。下面这个计算器把这笔账摊开，换成别的分辨率也能自己验证：只要宽高都能被 8 整除，压缩倍数基本不变，这也是 SDXL 把默认分辨率提到 1024×1024 之后，latent 依旧只有 128×128×4 的原因。</p>
+
+<div class="sd-card sd-b-calc">
+  <div class="hd"><span class="pin"></span><b>压缩率计算器</b></div>
+  <div class="bd">
+    <div class="sd-g3">
+      <div><label class="sd-fl" for="sd-b-w">宽度 <b>W</b>（px）</label><input id="sd-b-w" class="sd-in" type="text" inputmode="numeric" value="512" aria-describedby="sd-b-err"></div>
+      <div><label class="sd-fl" for="sd-b-h">高度 <b>H</b>（px）</label><input id="sd-b-h" class="sd-in" type="text" inputmode="numeric" value="512" aria-describedby="sd-b-err"></div>
+      <div><label class="sd-fl" for="sd-b-f">VAE 下采样倍数</label>
+        <select id="sd-b-f" class="sd-in">
+          <option value="8">8（SD1.x / SDXL 常见值）</option>
+        </select>
+      </div>
+    </div>
+    <div class="sd-g2" style="margin-top:12px">
+      <div><label class="sd-fl" for="sd-b-c">latent 通道数</label>
+        <select id="sd-b-c" class="sd-in">
+          <option value="4">4</option>
+        </select>
+      </div>
+      <div><span class="sd-fl">&nbsp;</span><div id="sd-b-err" class="sd-b-errline" role="alert"></div></div>
+    </div>
+    <div class="sd-x">
+      <table class="sd-t" style="margin-top:16px">
+        <thead><tr><th>空间</th><th>元素个数</th><th class="c">相对像素空间</th></tr></thead>
+        <tbody id="sd-b-out"></tbody>
+      </table>
+    </div>
+    <p class="sd-cap" id="sd-b-note"></p>
+    <p class="sd-cap"><b>这个倍数算的是「元素个数」，不是字节数。</b>像素通常是每通道 1 字节的 uint8，而 latent 是浮点（常见 fp16，每个数 2 字节）。按字节算，同一组配置下的压缩比只有元素比的一半左右。想拿它去估显存的话，记得先换算口径。</p>
+  </div>
+</div>
+
+<div class="sd-side"><span class="sd-lb">澄清</span>latent 的那 4 个通道不是 RGBA，也不对应任何人类能命名的东西。网上常见的「latent 预览图」，是把这 4 个通道用一个固定矩阵近似映射到 RGB 得到的近似可视化，并不是 latent 本身真实的样子——这里保守地只说到这一步。</div>
+
+<h3>压缩到这么小，为什么还能还原</h3>
+<p>自然图像里有大量冗余，VAE 学到的是一个「够用」的压缩表示，不是无损压缩。代价也很实在：非常细的纹理、密集的小字、规则的网格，最容易在这一步丢掉信息，第 12 节还会再碰到这个问题。</p>
+
+<div class="sd-fig">
+  <div class="sd-shots">
+    <div class="sd-shot"><div id="sd-b-cv-full"></div><span class="lb">96×96 原图</span></div>
+    <div class="sd-shot"><div id="sd-b-cv-down"></div><span class="lb">12×12（96÷8）尺度示意</span></div>
+  </div>
+  <p class="sd-cap">右边只是尺度示意——把左边这张图按 8 倍下采样后放大显示，帮助感受「信息被压到多小的格子里」。<b>真实的 latent 不是把图缩小得到的，也不长这样</b>：64×64 里的每个位置编码的是原图对应 8×8 区块的语义与结构信息，不是那 64 个像素的平均颜色。</p>
+</div>
+
+<div class="sd-bad"><span class="sd-lb">误区</span>「潜空间就是缩略图」——不是。它不是把图缩小，而是换了一套表示；上面那张右侧示意用的像素平均只是为了让你看清尺度差了多少，真正的 VAE 编码器学到的是语义级的压缩，不是简单缩放。</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>机制和舞台都清楚了——接下来沿 ComfyUI 的六个节点，看这条流水线是怎么把这两件事接起来的。</div>
+</section>
+
+<!-- ==== 30-pipeline.html ==== -->
+<section id="pipeline">
+<span class="sd-tag">[ 05 · 总览 ]</span>
+<h2>六个节点，一条数据流</h2>
+<p class="sd-lead">ComfyUI 的价值就在这里：它把前两节讲的机制，明明白白画成了一张有向图。别的界面把整条流水线折进一张参数表单里，这里你能直接看见数据在节点之间怎么流动。</p>
+
+<p>整张图只认六种「接口」。每一条连线都带着类型，类型决定了它能插到哪个输入口——两个节点看起来再不同，只要接口类型对得上就能接起来：</p>
+
+<div class="sd-card">
+  <div class="hd"><span class="pin"></span><b>六种数据类型</b></div>
+  <div class="bd">
+    <ul>
+      <li><span class="t-model">MODEL</span>　U-Net 权重，负责「预测噪声」这一个动作。</li>
+      <li><span class="t-clip">CLIP</span>　文本编码器本身，把字符串变成向量。</li>
+      <li><span class="t-cond">CONDITIONING</span>　编码后的提示词，是喂给 KSampler 的「指引」。</li>
+      <li><span class="t-latent">LATENT</span>　潜空间里那团数据，是被反复擦拭的画布。</li>
+      <li><span class="t-vae">VAE</span>　编解码器，负责潜空间与像素之间的转换。</li>
+      <li><span class="t-image">IMAGE</span>　最终落盘的像素图。</li>
+    </ul>
+  </div>
+</div>
+
+<p>这也是 ComfyUI 界面上一个很直观的校验：拖一条连线出去，颜色对不上的插槽根本接不进去——连线的颜色本身就是一层类型检查，不需要额外看文档才知道两个节点能不能接在一起。</p>
+
+<p>六个节点串成一条链，先各自记一句话，展开都留给后面几节：<code>Load Checkpoint</code> 一次性掏出 MODEL、CLIP、VAE 三样东西；<code>CLIP Text Encode</code> 正负各一路，把话变成 CONDITIONING；<code>Empty Latent Image</code> 准备一块指定尺寸的空白潜空间画布；<code>KSampler</code> 拿到 MODEL、两路 CONDITIONING 和 LATENT，在这里反复去噪；<code>VAE Decode</code> 把 LATENT 还原成像素；<code>Save Image</code> 落盘。</p>
+
+<div class="sd-fig">
+  <div id="sd-c-graph1"></div>
+  <p class="sd-cap">点击任意节点（或用 Tab 选中后按方向键、Enter），下面卡片会显示它的输入、输出、职责，以及挂在它上面的参数。</p>
+</div>
+
+<div class="sd-card" id="sd-c-info1">
+  <div class="hd"><span class="pin" id="sd-c-info1-pin"></span><b id="sd-c-info1-title">Load Checkpoint</b></div>
+  <div class="bd" id="sd-c-info1-body"></div>
+</div>
+
+<pre class="sd-flow" aria-label="流水线的纯文本示意，与上方节点图内容相同">Load Checkpoint
+  → MODEL ───────────────────────────────────► KSampler
+  → CLIP  ───► CLIP Text Encode(+) ─CONDITIONING─► KSampler
+  → CLIP  ───► CLIP Text Encode(−) ─CONDITIONING─► KSampler
+  → VAE   ───────────────────────────────────► VAE Decode
+
+Empty Latent Image → LATENT ──────────────────► KSampler
+
+KSampler ─LATENT─► VAE Decode ─IMAGE─► Save Image</pre>
+<p class="sd-cap">同一条链的纯文本版本，方便复制或朗读；箭头方向就是数据实际流动的方向。</p>
+
+<p>整条链上，只有 <code>KSampler</code> 会反复跑很多次——其余五个节点都只执行一次。多数生成耗时、多数可调参数，因此也都挂在它一个节点上；这正是后面第 08～11 四节几乎全在讲它的原因。</p>
+
+<div class="sd-bad">
+<span class="sd-lb">误区</span>
+「提示词直接进了 KSampler」——不对。KSampler 拿到的从来不是文字，而是已经编码好的 CONDITIONING 张量，它并不知道原始提示词长什么样。改一句提示词，改的其实是 <code>CLIP Text Encode</code> 那一步的输出，KSampler 只是被动接收这个变化。
+</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>六个节点、六种接口，这就是整条流水线的骨架。下一节拆开最左边这一个：<code>Load Checkpoint</code> 到底往外掏了什么。</div>
+</section>
+
+<section id="checkpoint">
+<span class="sd-tag">[ 06 · 节点 · MODEL ]</span>
+<h2>Load Checkpoint 装了什么</h2>
+<p class="sd-lead">一个 <code>.safetensors</code> 文件为什么能一次输出三种类型？因为它不是一块整体权重，而是打包了三套彼此独立的东西：U-Net（去噪主干）、文本编码器 CLIP、VAE（编解码器）。ComfyUI 的三个输出口，就是把这三样原样拆出来。</p>
+
+<p>打包不等于焊死。这三样都可以被单独换掉：外挂一个单独的 VAE（第 12 节讲为什么要这么做），或者换一个文本编码器，都是成立的操作。把 checkpoint 理解成「一个打包」而不是「一个不可分的整体」，是很多进阶玩法的基础。</p>
+
+<p>文件后缀也值得说一句：<code>.safetensors</code> 是纯张量容器，加载时不执行任何代码；<code>.ckpt</code> 是 Python pickle，反序列化时可能执行文件里携带的任意代码。社区已经普遍转向前者。</p>
+
+<div class="sd-fig">
+  <div id="sd-c-graph2"></div>
+</div>
+
+<div class="sd-g3">
+  <div class="sd-card" id="sd-c-card-model" style="--sd-c-accent:var(--t-model)">
+    <div class="hd"><span class="pin" style="background:var(--t-model)"></span><b class="t-model">MODEL</b></div>
+    <div class="bd">接下来会被 <code>KSampler</code> 反复调用，用来预测每一步该减掉的噪声。挂在它上面的采样细节，见第 10 节。</div>
+  </div>
+  <div class="sd-card" id="sd-c-card-clip" style="--sd-c-accent:var(--t-clip)">
+    <div class="hd"><span class="pin" style="background:var(--t-clip)"></span><b class="t-clip">CLIP</b></div>
+    <div class="bd">接下来会把提示词编码成 CONDITIONING。分词与 77 token 的限制，见第 07 节。</div>
+  </div>
+  <div class="sd-card" id="sd-c-card-vae" style="--sd-c-accent:var(--t-vae)">
+    <div class="hd"><span class="pin" style="background:var(--t-vae)"></span><b class="t-vae">VAE</b></div>
+    <div class="bd">接下来会把最终的 LATENT 还原成像素图。画质相关的问题，见第 12 节。</div>
+  </div>
+</div>
+
+<h3>U-Net 在做什么</h3>
+<p>三者里，U-Net 承担的是「预测噪声」这个动作。它的结构大致是一条「下采样—上采样加跳跃连接」的路径：输入是带噪的 latent 加上时间步 <code>t</code>，逐级下采样进入中间层，再逐级上采样，期间通过跳连把早期的细节直接搭回对应的上采样层。它的输出和输入形状完全一致——都是同一块 <code>[1, 4, 64, 64]</code> 的 latent（对应第 04 节算过的 64×64×4）。正因为形状相同，输出的噪声估计才能直接从输入里逐点减掉。提示词并不是拼接进输入的，而是在下采样、中间层、上采样的每一级里通过 cross-attention 注入（第 07、08 节展开）。</p>
+
+<div class="sd-fig">
+  <svg class="sd-svg" viewBox="0 0 506 175" role="img" aria-labelledby="sd-c-unet-title" aria-describedby="sd-c-unet-desc">
+    <title id="sd-c-unet-title">U-Net 形状示意</title>
+    <desc id="sd-c-unet-desc">输入是 [1,4,64,64] 的带噪 latent 加时间步 t，逐级下采样到中间层，再逐级上采样并通过跳连补回细节，输出同样是 [1,4,64,64]。下采样、中间层、上采样各级都有 cross-attention 注入点。</desc>
+    <defs>
+      <marker id="sd-c-def-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"></path>
+      </marker>
+    </defs>
+
+    <!-- 跳连（灰色虚线，外弧连 Down1–Up1，内弧连 Down2–Up2） -->
+    <path class="sd-c-skip" d="M 117 78 Q 252 10 387 78"></path>
+    <path class="sd-c-skip" d="M 186 85 Q 252 40 318 85"></path>
+    <!-- 形状相同的引线 -->
+    <path class="sd-c-skip" d="M 40 130 L 40 150 L 464 150 L 464 130"></path>
+    <text x="252" y="163" text-anchor="middle" font-size="9.5" font-weight="700" fill="var(--ink)">输入输出形状相同</text>
+
+    <!-- 主链连接箭头 -->
+    <line x1="74" y1="100" x2="88" y2="100" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#sd-c-def-arrow)"></line>
+    <line x1="146" y1="100" x2="160" y2="100" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#sd-c-def-arrow)"></line>
+    <line x1="212" y1="100" x2="226" y2="100" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#sd-c-def-arrow)"></line>
+    <line x1="278" y1="100" x2="292" y2="100" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#sd-c-def-arrow)"></line>
+    <line x1="344" y1="100" x2="358" y2="100" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#sd-c-def-arrow)"></line>
+    <line x1="416" y1="100" x2="430" y2="100" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#sd-c-def-arrow)"></line>
+
+    <!-- Input -->
+    <rect x="6" y="70" width="68" height="60" rx="6" fill="var(--panel2)" stroke="var(--muted)" stroke-width="1.6"></rect>
+    <text x="40" y="88" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">Input</text>
+    <text class="m" x="40" y="100" text-anchor="middle" font-size="8" fill="var(--ink2)">[1, 4, 64, 64]</text>
+    <text class="m" x="40" y="112" text-anchor="middle" font-size="9" fill="var(--ink2)">+ t</text>
+
+    <!-- Down1 -->
+    <rect x="88" y="78" width="58" height="44" rx="6" fill="var(--panel)" stroke="var(--rule2)"></rect>
+    <text x="117" y="104" text-anchor="middle" font-size="11" font-weight="650" fill="var(--ink)">Down</text>
+    <circle class="sd-c-xdot" cx="117" cy="122" r="3"></circle>
+
+    <!-- Down2 -->
+    <rect x="160" y="85" width="52" height="30" rx="5" fill="var(--panel)" stroke="var(--rule2)"></rect>
+    <text x="186" y="104" text-anchor="middle" font-size="10" font-weight="650" fill="var(--ink)">Down</text>
+    <circle class="sd-c-xdot" cx="186" cy="115" r="3"></circle>
+
+    <!-- Mid -->
+    <rect x="226" y="90" width="52" height="20" rx="4" fill="var(--panel)" stroke="var(--rule2)"></rect>
+    <text x="252" y="104" text-anchor="middle" font-size="9" font-weight="650" fill="var(--ink)">Mid</text>
+    <circle class="sd-c-xdot" cx="252" cy="110" r="3"></circle>
+
+    <!-- Up2 -->
+    <rect x="292" y="85" width="52" height="30" rx="5" fill="var(--panel)" stroke="var(--rule2)"></rect>
+    <text x="318" y="104" text-anchor="middle" font-size="10" font-weight="650" fill="var(--ink)">Up</text>
+    <circle class="sd-c-xdot" cx="318" cy="115" r="3"></circle>
+
+    <!-- Up1 -->
+    <rect x="358" y="78" width="58" height="44" rx="6" fill="var(--panel)" stroke="var(--rule2)"></rect>
+    <text x="387" y="104" text-anchor="middle" font-size="11" font-weight="650" fill="var(--ink)">Up</text>
+    <circle class="sd-c-xdot" cx="387" cy="122" r="3"></circle>
+
+    <!-- Output -->
+    <rect x="430" y="70" width="68" height="60" rx="6" fill="var(--panel2)" stroke="var(--muted)" stroke-width="1.6"></rect>
+    <text x="464" y="94" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">Output</text>
+    <text class="m" x="464" y="108" text-anchor="middle" font-size="8" fill="var(--ink2)">[1, 4, 64, 64]</text>
+  </svg>
+  <p class="sd-cap">形状先收缩、后还原，<b>输入输出维度完全一致</b>。橙色点是 cross-attention 的注入位置（见第 08 节）；灰色虚线弧是跳连，把下采样阶段的细节直接搭回对应的上采样层。</p>
+</div>
+
+<div class="sd-side"><span class="sd-lb">补充</span>同一个 checkpoint 里，U-Net、CLIP、VAE 三者的规格是配套设计的——latent 通道数、原生分辨率、文本编码器的规格，很大程度上由底模版本决定。拿到一个陌生的 workflow，第一件事最好是看它用的是什么底模，很多参数选择其实是被它决定的，不是随手调的。</div>
+
+<div class="sd-bad"><span class="sd-lb">误区</span>「底模决定画风，采样器决定质量」——前半句大致成立，后半句不准。采样器主要影响的是同样步数下的收敛程度，不是画风的来源；换一个采样器不会把一个写实底模变成动漫风格（采样器的作用见第 10 节）。</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>MODEL、CLIP、VAE，三样东西都拿到了。下一节先看 CLIP 这一路——你敲的那句话，是怎么变成模型能用的东西的。</div>
+</section>
+
+<!-- ==== 40-clip.html ==== -->
+<section id="clip">
+<span class="sd-tag">[ 07 · 节点 · CLIP ]</span>
+<h2>你敲的那句话，是怎么变成模型能用的东西的</h2>
+<p class="sd-lead">提示词不是整句塞给模型的。它先被切碎成 token，再逐个编码成向量，最后拼成一份 <span class="t-cond">CONDITIONING</span>——这中间每一步都有硬性限制，摸清它们，很多「提示词没用」的疑惑会自己消失。</p>
+
+<p>第一步是分词，<b>而且不是按单词切</b>：常见词通常整词就是一个 token，生僻词、拼错的词、生造的名字往往会被拆成好几个模型从没见过的碎片组合。这正是生造词、拼写错误、罕见专有名词效果差的直接原因——不是模型「不认识」，是它被拆成了训练时几乎没见过的碎片拼法。</p>
+
+<p>第二个限制更硬：文本编码器一次只认 <b>77 个位置</b>，其中第 0 位是起始标记、第 76 位是结束标记，真正能塞内容的只有中间 <b>75 个</b>。超出这 75 个的部分会被直接砍掉——<b>是彻底没有进入模型，不是权重变低一点</b>。这是提示词写得太长时最常见的失效原因。</p>
+
+<div class="sd-side"><span class="sd-lb">补充</span>ComfyUI 等实现会把超长提示词切成几段分别编码再拼接，绕开这条 75 的限制，但代价是段与段之间的注意力关系会被打断。</div>
+
+<div class="sd-card">
+  <div class="hd"><span class="pin" aria-hidden="true"></span><b>CLIP 分词与 77 槽位</b><span class="sd-m" style="margin-left:auto">演示</span></div>
+  <div class="bd">
+    <label class="sd-fl" for="sd-d-input">改一改这句提示词，看它怎么被切</label>
+    <input id="sd-d-input" class="sd-in" type="text" value="a cute cat sitting on a red sofa, soft lighting" aria-label="提示词输入，用于分词演示">
+    <div class="sd-ctl" style="margin-top:10px">
+      <button class="sd-b sd-d-preset" type="button" data-i="0">正常提示词</button>
+      <button class="sd-b sd-d-preset" type="button" data-i="1">超长提示词</button>
+      <button class="sd-b sd-d-preset" type="button" data-i="2">生造词 + 权重语法</button>
+    </div>
+
+    <div class="sd-fig">
+      <div id="sd-d-slots" class="sd-d-slots"></div>
+      <div id="sd-d-overflow" class="sd-d-overflow" hidden>
+        <div class="sd-fl">超出 75 个内容槽位的部分，<b>被直接截断，完全没有进入模型</b>：</div>
+        <div id="sd-d-ovlist" class="sd-d-ovlist"></div>
+      </div>
+      <p class="sd-cap">已用 <b id="sd-d-count">0</b> / 75 个内容槽位（首尾各另有 1 个特殊标记，合计 77）。<b>这是为讲解写的简化分词</b>：按空格/标点切词，超过 4 个字符且不在小词表里的词按定长拆成碎片（<code>##</code> 前缀表示续接），并非真实 CLIP 的 BPE 词表。</p>
+    </div>
+
+    <div class="sd-fl" style="margin-top:10px">每个内容 token 的权重（<code>(word:1.3)</code> 语法会缩放该 token 的 embedding，默认权重为 1.0）</div>
+    <div id="sd-d-weights" class="sd-d-weights" aria-hidden="true"></div>
+    <p id="sd-d-wnote" class="sd-cap"></p>
+  </div>
+</div>
+
+<p>77 个位置各自被编码成一个向量（SD1.x 常见是 768 维，不同版本规格不同），拼起来是一个 <b>77 × 768</b> 的张量，这就是 <span class="t-cond">CONDITIONING</span>。<b>关键是</b>：送进 U-Net 的不是「整句话压成的一个向量」，而是这 77 个位置各自向量组成的序列；U-Net 通过 cross-attention 在每一层去「查」这个序列，所以提示词不同部分能在不同层、不同位置发挥不同作用。</p>
+
+<p><code>(word:1.3)</code> 这类权重语法，改的是对应 token 的 embedding 数值本身——按比例放大或缩小它，并不是让模型「更用心看」这个词。调得过大会让这个向量偏出训练时见过的分布范围，效果反而崩坏。</p>
+
+<div class="sd-bad"><span class="sd-lb">误区</span>「提示词越长越好」——超过 75 个内容 token 的部分会被截断或需要另起一段编码，而且词越多，每个词分到的相对影响就越稀薄。「堆一堆 <code>masterpiece, best quality</code> 一定更好」——这类标签只有在训练数据里确实带过对应标注时才起作用，换一个底模效果可能天差地别，切勿默认有效。</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>提示词已经变成一份 77×768 的 <span class="t-cond">CONDITIONING</span> 张量。下一节看它具体怎么被用起来——正负提示词各跑一遍，再按 CFG 合成出这一步该走的方向。</div>
+</section>
+
+<section id="cfg">
+<span class="sd-tag">[ 08 · 参数 · CFG ]</span>
+<h2>正负提示词与 CFG：模型每一步其实跑两遍</h2>
+<p class="sd-lead">上一节那份 77×768 的 CONDITIONING 已经躺在 KSampler 的输入口上了，但模型并不会直接「照着它画」。它真正被用起来的方式，是让模型每一步跑两遍——正负各一遍，再按一条公式合成。这条公式就是 CFG（Classifier-Free Guidance），也是整条流水线里最容易被想歪的参数——它不是提示词的权重，而是决定每一步噪声预测怎么合成的公式。</p>
+
+<p>先说负面提示词为什么存在。每一步，模型会跑<b>两遍</b>：一遍以正面提示词为条件，得到 <span class="t-cond">ε_cond</span>；一遍以负面提示词为条件（不写负面提示词时就是空文本），得到 <span class="t-cond">ε_uncond</span>。负面提示词从来不是「从画面里抠掉什么」，它真正改变的是 ε_uncond 这个基准预测。</p>
+
+<pre class="sd-code">ε = ε_uncond + scale × (ε_cond − ε_uncond)</pre>
+<p><code>ε_cond − ε_uncond</code> 是「提示词指向的方向」，<code>scale</code> 是沿这个方向放大多少倍。<code>scale = 1</code> 时退化成只用 ε_cond，等于没有引导；<code>scale = 0</code> 时完全按 ε_uncond 走，提示词形同虚设。<b>scale 越大，不是越「听话」，是这一步的更新量越「极端」。</b>请把「极端」和「听话」这两件事分清楚。</p>
+
+<div class="sd-key"><span class="sd-lb">调高 CFG 会发生什么</span>放大倍数越大，每一步的更新量就越大，越容易冲出模型训练时见过的数据分布——表现出来就是<b>过饱和、对比度爆炸、边缘发硬、细节焦掉</b>。所以一张图看起来「烧焦了」，第一嫌疑永远是 CFG 太高，而不是模型不够听话。开启 CFG 意味着每步要跑两遍网络，单步耗时也因此约翻倍。</div>
+
+<div class="sd-card">
+  <div class="hd"><span class="pin" aria-hidden="true"></span><b>CFG 向量合成</b><span class="sd-m" style="margin-left:auto">演示</span></div>
+  <div class="bd">
+    <div class="sd-g2">
+      <div>
+        <div id="sd-d-cfgsvg" class="sd-d-cfgsvg" role="img" aria-label="CFG 向量合成示意图"></div>
+        <p class="sd-cap" id="sd-d-cfgcap"></p>
+      </div>
+      <div>
+        <div class="sd-shots"><div class="sd-shot"><div id="sd-d-cfgimg"></div><span class="lb">画面倾向模拟</span></div></div>
+        <p class="sd-cap">这是用对比度/饱和度做像素级后处理，模拟不同 CFG 的视觉后果，<b>不是真的跑了不同 CFG 的采样</b>。</p>
+      </div>
+    </div>
+    <div class="sd-ctl" style="margin-top:14px">
+      <label class="n" for="sd-d-cfgscale">CFG scale</label>
+      <input id="sd-d-cfgscale" class="sd-sl cond" type="range" min="0" max="20" step="0.5" value="7" aria-label="CFG scale，范围 0 到 20，默认 7">
+      <span class="sd-rd" id="sd-d-cfgrd">7.0</span>
+    </div>
+    <p class="sd-cap" id="sd-d-cfgwarn"></p>
+  </div>
+</div>
+
+<div class="sd-side"><span class="sd-lb">补充</span>负面提示词写空也完全合法，此时 ε_uncond 就是空文本条件下的预测。很多人往负面里堆一长串词，但<b>负面提示词同样占用那 77 个槽位</b>，同样受第 07 节讲的截断规则约束。</div>
+
+<div class="sd-bad"><span class="sd-lb">误区</span>「CFG 就是提示词权重」——不是，权重语法（<code>(word:1.3)</code>）改的是 token 的 embedding，CFG 改的是每一步噪声预测的合成方式，两者作用在完全不同的地方。「负面提示词能把画面里的东西删掉」——它只是换了一个 ε_uncond，从而改变了 ε_cond − ε_uncond 这个方向，它影响的是<b>方向</b>，不是对着画面做减法删元素。</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>提示词已经变成了「每一步该往哪走」的方向。下一节看这条路的起点——那块空白画布，以及决定它长什么样的 seed。</div>
+</section>
+
+<!-- ==== 50-seed.html ==== -->
+<section id="seed">
+<span class="sd-tag">[ 09 · 节点 · <span class="t-latent">LATENT</span> ]</span>
+<h2>空白画布与 seed：为什么同样的提示词能出完全不同的图</h2>
+<p class="sd-lead">Empty Latent Image 这个节点其实什么都没算——它只是按你给的宽高，准备一块空白的张量。真正决定这张图从哪里出发的，是紧跟着它工作的那颗 seed。</p>
+
+<p>打开 Empty Latent Image 的属性面板，能调的只有 width、height、batch_size 三项，没有任何看起来「有内容」的参数。它做的事情很朴素：按 <code>[1, 4, H/8, W/8]</code> 的形状开一块 <span class="t-latent">LATENT</span> 张量，此刻里面全是 0——不是噪声，不是构图，什么都不是。第 04 节讲过的 8 倍下采样，就是在这里落地的：宽高必须除得尽 8，因为 VAE 在潜空间与像素之间换算用的正是 8 倍这个比例（文生图这一路只走解码方向：64×64 → 512×512）。</p>
+
+<div class="sd-card">
+  <div class="hd"><span class="pin"></span><b>宽高 → LATENT 形状</b>计算器</div>
+  <div class="bd">
+    <div class="sd-ctl">
+      <label class="n" for="sd-e-w">width</label>
+      <input id="sd-e-w" class="sd-in sd-e-num" type="number" value="512" step="8" min="8" aria-label="width，像素">
+      <label class="n" for="sd-e-h">height</label>
+      <input id="sd-e-h" class="sd-in sd-e-num" type="number" value="512" step="8" min="8" aria-label="height，像素">
+    </div>
+    <p class="sd-e-shape" id="sd-e-shape-out"></p>
+    <div class="sd-bad sd-e-err" id="sd-e-shape-err" hidden></div>
+  </div>
+</div>
+
+<p>真正带来随机性的不是这个节点，而是 KSampler 启动时做的一件事：它会用 seed 生成一团随机噪声，填进这块刚开出来的空白画布——生成的起点，是这团噪声，不是空白本身。<strong>seed 决定了这团初始噪声里的每一个数值</strong>，而这团初始噪声取到的具体数值，会一路影响到最终图像的构图走向。</p>
+
+<div class="sd-card">
+  <div class="hd"><span class="pin"></span><b>seed → 初始噪声</b></div>
+  <div class="bd">
+    <div class="sd-ctl">
+      <label class="n" for="sd-e-seed">seed</label>
+      <input id="sd-e-seed" class="sd-in sd-e-seedin" type="number" value="20260910" aria-label="seed 数值">
+      <button class="sd-b" id="sd-e-rand" type="button">随机换一个</button>
+    </div>
+    <div class="sd-fig">
+      <div id="sd-e-single"></div>
+      <p class="sd-cap">这是页面自己的伪随机数发生器按这颗 seed 生成的一片高斯噪声，<b>按 RGB 三通道画出来示意</b>——真实的初始噪声是 4 通道的潜空间张量，没法直接看（见第 04 节的澄清）。要点不在它长什么样，而在于：同一颗 seed 永远给出同一片数——KSampler 接下来所有的工作，都是把这团东西一点点擦掉。</p>
+    </div>
+  </div>
+</div>
+
+<h3>换一颗 seed，起点完全不同</h3>
+<p>下面四张图用了四个不同的 seed，其余什么都没变。它们看起来毫无关联，因为它们本来就是四段互不相干的随机数：</p>
+<div class="sd-fig">
+  <div class="sd-shots" id="sd-e-multi"></div>
+  <p class="sd-cap">四颗不同 seed 生成的初始噪声。图像会不会长得像，从这一步就已经分道扬镳了。</p>
+</div>
+
+<h3>同一颗 seed，画多少次都一样</h3>
+<p>把 seed 固定住，反复生成同一团噪声——两次的结果应当逐像素相同，下面直接把比对结果算出来：</p>
+<div class="sd-fig">
+  <div class="sd-shots" id="sd-e-twice"></div>
+  <p class="sd-cap" id="sd-e-twice-note"></p>
+</div>
+
+<div class="sd-key">
+  <span class="sd-lb">读法</span>
+  这团噪声不是「底稿」，它不包含任何要保留的东西——它是接下来会被一步步擦掉的东西。但因为擦除的过程（模型、提示词、步数都固定时）是完全确定的，<strong>起点不同，终点自然也不同</strong>。这也是<strong>整条链路上唯一的随机性来源</strong>（某些采样器还会在中途再注入一点噪声，见下一节）：固定 seed，就等于把这份随机性焊死了，同参数下的结果因此可以复现——这也是调参时第一件要做的事：不固定 seed，你永远分不清画面的变化是参数改的，还是纯粹运气使然。
+</div>
+
+<h3>尺寸怎么选</h3>
+<p>宽高必须是 8 的倍数，这是硬性要求，不是建议，上面的计算器会直接把非法尺寸拦下来。另外一条经验性的提醒：偏离底模原生训练时常见的分辨率太远，容易出现构图上的问题（比如人物多出一颗头或一条肢体），因为模型在那个尺寸组合上没见过足够多的样本——具体该定多少并没有一个通用答案，遇到这类问题时不妨先怀疑是不是尺寸选得过于极端。</p>
+
+<div class="sd-bad">
+  <span class="sd-lb">误区</span>
+  「seed 是个玄学幸运数字」——它只是随机数发生器的起点，本身无所谓好坏。所谓「好 seed」，只有在<strong>其余参数完全不变</strong>的前提下才成立；换一句提示词、换一个尺寸，同一颗 seed 给出的构图就完全是另一回事了，「好运」并不会跟着 seed 一起迁移。
+</div>
+<div class="sd-bad">
+  <span class="sd-lb">误区</span>
+  「batch 里第二张图的 seed 就是 seed+1」——不同实现的具体处理方式并不一致，不要把这条当成能依赖的规律。
+</div>
+
+<div class="sd-out">
+  <span class="sd-lb">本节收束</span>
+  画布本身是空的；真正的起点是那团由 seed 决定的初始噪声，也是全链路唯一能让结果复现的东西。下一节看 KSampler 怎么把这团噪声一步步变成图——先看它给每一步安排的噪声水平表，再看它每一步具体怎么走。
+</div>
+</section>
+<section id="sampler">
+<span class="sd-tag">[ 10 · 节点 · 采样 ]</span>
+<h2>KSampler：sigma 表决定每步跨多远，采样器决定怎么走</h2>
+<p class="sd-lead">去噪这条路怎么走，其实被拆成两个互相独立的决定：路标怎么放，和两个路标之间怎么走。前者叫 scheduler，后者叫 sampler——ComfyUI 把它们做成两个下拉框，正是因为它们管的是两件不同的事。</p>
+
+<h3>scheduler：噪声表怎么放路标</h3>
+<p>KSampler 拿到的步数 N，并不是把 t 从 999 均匀切成 N 份。scheduler 决定这 N 步具体落在哪些噪声水平上，而且步与步之间通常不是均匀的——噪声大的阶段跨得大，接近干净的阶段跨得小。第 03 节出现过的线性表和余弦表，正是两种真实存在的噪声表，这里直接拿它们的 ᾱ 换算出噪声水平 σ 来对比：</p>
+
+<div class="sd-fig">
+  <div class="sd-e-legend">
+    <span class="sw"><i class="ln sd-e-ln-lin"></i>线性表（实线）</span>
+    <span class="sw"><i class="ln sd-e-ln-cos"></i>余弦表（虚线）</span>
+  </div>
+  <div class="sd-ctl">
+    <label class="n" for="sd-e-sig-n">steps</label>
+    <input id="sd-e-sig-n" class="sd-sl latent" type="range" min="4" max="50" step="1" value="20" aria-label="采样步数 N，对比两种噪声表在相同步数下的路标分布">
+    <span class="sd-rd" id="sd-e-sig-nrd">N = 20</span>
+  </div>
+  <div id="sd-e-sigwrap"></div>
+  <p class="sd-cap" id="sd-e-sigcap"></p>
+</div>
+
+<h3>sampler：两点之间怎么走</h3>
+<p>回到第 03 节那个动作：网络在当前位置给出一份噪声预测，反解出一个成品猜测 <span class="sd-m">x̂₀</span>，真正落地的只是<b>朝它迈的那一小步</b>。sampler 决定的就是这一步怎么迈——一阶方法只信当前这一次预测给的方向；高阶方法会在同一步里再问网络一次，用两次预测折中出一个更准的方向。所谓「不同的数值解法」，差别全在这里：本质上是在解同一条微分方程，不同 sampler 只是不同的数值解法：</p>
+<ul>
+  <li><strong>一阶方法</strong>（Euler 一类）：每步只用当前点的斜率，简单，每步只需一次网络前向。</li>
+  <li><strong>高阶方法</strong>（Heun、DPM++ 的二阶变体一类）：每步多算一次或几次前向来修正方向，单步更准，但单步也更贵；同样的步数下，走的路线通常比一阶方法更贴近真实解——注意这只是「同样步数下收敛程度不同」，具体该走多少步是下一节的话题。</li>
+</ul>
+<p>比记住这些名字更实用的一条区分，是名字里带不带 <code>a</code> 或 <code>sde</code> 的那一类——<strong>ancestral / SDE 采样器</strong>：它们每一步都会额外注入一点新噪声。后果很关键：<strong>它们不会收敛到一个固定结果</strong>，步数一变，输出就跟着变，哪怕其余参数完全相同；而 <code>ddim</code>、名字带 <code>_2m</code> 这类确定性采样器，步数增加时结果会逐渐趋于稳定。下面用页面上的加噪公式模拟这个差异：</p>
+
+<div class="sd-fig">
+  <h4>模拟：确定性一路——同一份噪声，steps 越多越稳定</h4>
+  <div class="sd-shots" id="sd-e-det"></div>
+  <h4>模拟：ancestral / SDE 一路——每个 steps 都注入一份新噪声</h4>
+  <div class="sd-shots" id="sd-e-anc"></div>
+  <p class="sd-cap">图注：两排图都是用页面里的加噪公式（<code>SD.diffuse</code> + <code>SD.noiseField</code>）模拟出来的，<strong>不是真的跑了任何采样器</strong>。上排固定用同一份噪声，只是随 steps 增大调低残留噪声水平——画面逐渐向同一个方向收敛；下排把残留噪声水平定住不变，但每个 steps 都换一份独立噪声——画面不会因为 steps 变多而「定下来」。这里只演示「收敛与否」的定性差别，不代表任何真实采样器在具体步数下的实际表现。</p>
+</div>
+
+<div class="sd-side">
+  <span class="sd-lb">职责边界</span>
+  同一个 sampler 配不同 scheduler，是不同的组合；同一个 scheduler 换一个 sampler，也是不同的组合。很多人把「用了 DPM++ 2M」和「用了 Karras」混着当成一回事去描述，其实这是两个独立的下拉框，各管各的——一个决定路标怎么放，一个决定怎么走到下一个路标，二者可以任意搭配。
+</div>
+
+<div class="sd-out">
+  <span class="sd-lb">本节收束</span>
+  路标怎么放、怎么走，现在都清楚了。下一节回答那个最常被问的问题——到底该走多少步。
+</div>
+</section>
+
+<!-- ==== 60-steps.html ==== -->
+<section id="steps">
+<span class="sd-tag">[ 11 · 参数 · STEPS ]</span>
+<h2>steps 该走多少步，denoise 又是什么</h2>
+<p class="sd-lead">KSampler 面板上最显眼的两个数字。多数人的直觉是「steps 越大越精细，denoise 是去噪力度」——这两句话都只对了一半，甚至第二句基本是错的。</p>
+
+<p><code>steps</code> 决定的是把从纯噪声到成品这条路径切成多少段来走。它不是画质档位，而是数值积分的精度：把一条连续的曲线拆成折线段去逼近，段数越多，每一步跨得越小，离散误差越小，走出来的折线越贴近真实曲线。这也是为什么 03 节说的「预测噪声、减掉，重复几十次」要重复很多次而不是一次——一步跨太远，误差就大。</p>
+
+<div class="sd-key">
+<span class="sd-lb">但误差下降得越来越慢</span>
+从 4 步到 8 步，折线明显更贴合；从 16 步到 32 步，肉眼已经很难分辨。误差不是匀速下降的，而是越往后收益越薄——到某一点之后，多给的步数带来的画面变化，比采样过程本身的随机性还小。「steps 越多越好」不成立，超过这个点纯粹是在多等而已。
+</div>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span>模拟 <b>离散化误差随步数的变化</b></div>
+<div class="bd">
+<div class="sd-x"><div class="sd-shots" id="sd-f-conv-host"></div></div>
+<p class="sd-cap">四格用<b>加噪公式</b> <code>x=√ᾱ·x₀+√(1−ᾱ)·ε</code> 反过来演示：步数越多，对应保留的「残留噪声」越少。<b>这不是真的跑一遍采样</b>，只是借同一条公式，把「步数增多→离散误差变小→收益递减」这件事画出来给你看形状。</p>
+</div>
+</div>
+
+<p>这个收敛点在哪，还得回到 10 节的结论去看采样器是哪一类：<b class="t-latent">确定性采样器</b>（如 <code>euler</code>、<code>dpm++ 2m</code>、<code>ddim</code> 这类不吃随机噪声的）步数越多越趋于稳定，存在明确的收敛点，过了就是浪费；而 <b class="t-latent">ancestral / SDE 类</b>（名字里带 <code>a</code> 或 <code>sde</code>）每一步都会注入新的随机噪声，改变 steps 相当于换了一条完全不同的轨迹——对这类采样器谈「多少步收敛」本身没有意义，它压根不收敛到同一张图。</p>
+
+<div class="sd-side">
+<span class="sd-lb">步数 ≠ 前向次数</span>
+高阶采样器（如二阶方法）为了让每一步更准，会在一步之内向 U-Net 提交不止一次前向请求。所以 <code>steps=20</code> 对一阶采样器和对二阶采样器，实际算的次数不一样；比较不同采样器谁更「费」，要看的是总前向次数，而不是 steps 这个数字本身。08 节说过 CFG 会让每一步跑两遍（正负提示词各一次）——这个乘数也要算进去。
+</div>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span>计算器 <b>总前向次数</b></div>
+<div class="bd">
+<div class="sd-ctl">
+<label class="n" for="sd-f-fc-steps">steps</label>
+<input id="sd-f-fc-steps" class="sd-in" style="width:88px" type="number" inputmode="numeric" value="20" aria-describedby="sd-f-fc-err">
+<label class="n" for="sd-f-fc-order" style="margin-left:6px">采样器阶数</label>
+<div id="sd-f-fc-order"></div>
+<button class="sd-b on" id="sd-f-fc-cfg" type="button" aria-pressed="true">CFG 开启（每步跑两遍）</button>
+</div>
+<p class="sd-f-err" id="sd-f-fc-err" role="alert"></p>
+<p id="sd-f-fc-out"></p>
+</div>
+</div>
+
+<p>再看 <code>denoise</code>。它常被理解成「去噪力度」，但它真正控制的是<b>从哪个噪声水平起步</b>。<code>denoise = 1.0</code> 表示从纯噪声（t 最大处）开始走完整条路径，这是文生图的默认值；小于 1 时，会拿输入的那块 latent加上一部分噪声，只从这个较浅的噪声水平往回走剩下的一段，原图的大结构因此被保留下来——这正是图生图（img2img）的做法，denoise 越小，保留的原图结构越多。</p>
+
+<div class="sd-bad">
+<span class="sd-lb">两个常见踩坑</span>
+「steps 越多越精细」——见上文，过了收敛点就是白等，尤其在 ancestral 类采样器上，多等的步数换来的只是另一张不同的图，谈不上更精细。<br>
+「denoise 是降噪强度，调小图会更干净」——恰恰相反。在纯文生图流程里把 denoise 调小，起点噪声是少了，但留给模型去噪的路径也跟着变短了，一张原本该走完整条路径的图被从半路截断，结果是一张<b>没被去噪完全、发灰发糊</b>的图。denoise 只在图生图这种「有原图打底」的场景里调小才合理。
+</div>
+
+<div class="sd-out">
+<span class="sd-lb">本节收束</span>
+steps 是积分精度，存在收敛点，且收敛点因采样器类型而异；denoise 是起步噪声水平，不是强度旋钮。图已经在潜空间里走完了整条路径，接下来要做的是把 <span class="t-latent">LATENT</span> 变回看得见的像素——12 节讲 VAE 解码，以及「发灰发糊」还有另一个更常见的成因。
+</div>
+</section>
+
+<section id="vae">
+<span class="sd-tag">[ 12 · 节点 · VAE ]</span>
+<h2>VAE 解码：潜空间回到像素，以及图为什么会发灰发糊</h2>
+<p class="sd-lead">KSampler 吐出来的还是 <span class="t-latent">LATENT</span>，一堆数字，肉眼看不了。VAE Decode 节点把它变回 <span class="t-image">IMAGE</span>——这是六个节点里的最后一棒。</p>
+
+<p><b class="t-vae">VAE</b> 在整条链路上其实出现过两次，很多人把它们混成一件事：04 节讲潜空间压缩时，用的是<b>编码器</b>（像素 → latent），那是图生图和 inpaint 才会走到的路；文生图从 Empty Latent 出发，压根没有原图可编码，全程只用<b>解码器</b>（latent → 像素），也就是本节这一个方向。</p>
+
+<div class="sd-key">
+<span class="sd-lb">解码器在做什么</span>
+把 <code>[1, 4, H/8, W/8]</code> 的张量还原成 <code>[1, 3, H, W]</code> 的像素图。它不是把每个数字简单地放大插值，而是一个专门训练出来的上采样网络——要凭 4 个通道里的信息，去「编」出 8×8 倍于原来位置数量的像素细节。
+</div>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span>模拟 <b>压缩—还原会丢掉什么、混进什么</b></div>
+<div class="bd">
+<div class="sd-x"><div class="sd-shots" id="sd-f-vae-host"></div></div>
+<div class="sd-ctl">
+<button class="sd-b on" id="sd-f-vae-toggle" type="button" aria-pressed="true">模拟 VAE 不匹配（发灰）：开</button>
+</div>
+<p class="sd-cap">左：原图。中：先把 96×96 压到 12×12（对应进 latent 的尺度）、再放大回 96×96 后的样子——大块的天空渐变、山形轮廓、太阳位置都还在，但水面那几道细反光条纹基本看不出来了。右：在还原结果上叠加一次「降对比度 + 去饱和」，重现「发灰」的观感。<b>这里全部是用降采样与色彩变换做的模拟</b>，真实 VAE 是一个学出来的网络，具体丢什么、怎么丢，和这里的模拟不完全一样，仅用来建立直觉。</p>
+</div>
+</div>
+
+<h3>发灰发糊，通常是这两件事之一</h3>
+<p><b>VAE 版本不匹配</b>是最常见的头号原因：checkpoint 自带的 VAE 和你外挂加载的 VAE 不是同一个、或者版本对不上，表现为整张图像蒙了一层灰、颜色发淡、对比度不足——就是上面右边那格模拟的样子。<b>VAE 本身的信息损失</b>是另一回事：04 节说过潜空间压缩不是无损的，最容易在这个过程里丢掉的是极细的纹理、小字、密集网格、人眼虹膜这类高频细节——它们在 4 个通道、H/8×W/8 的分辨率里根本没有足够的位置被编码下来。放大出图之后还要单独修脸修手，部分原因就在这里：那些细节从一开始就没被带进 latent。</p>
+
+<div class="sd-side">
+<span class="sd-lb">分辨发灰 vs 焦掉</span>
+发灰偏淡、对比度不足，大概率是 VAE 的问题（版本不匹配或信息损失）；颜色过饱和、边缘发硬「烧焦」，大概率是 08 节讲的 CFG 数值给得过高。两者的表现方向正好相反，别混着排查。解码默认是整张一次做完；显存紧张时才会退成分块（tiled）进行，显存紧张时会分块解码来省显存，代价是块与块的接缝处偶尔会看出拼接痕迹——这个只在极端情况下才明显，不是解码器的常态问题。
+</div>
+
+<table class="sd-t sd-x">
+<thead><tr><th>症状</th><th>最可能的成因</th><th>该看哪里</th></tr></thead>
+<tbody>
+<tr><td>发灰、发淡、对比度不足</td><td>VAE 版本不匹配，或本身信息损失</td><td>Load VAE 是否配套；换回 checkpoint 自带 VAE</td></tr>
+<tr><td>过饱和、边缘「烧焦」</td><td>CFG 数值过高</td><td>KSampler 的 CFG 参数（08 节）</td></tr>
+<tr><td>整体发糊、细节缺失</td><td>latent 压缩损失了高频细节</td><td>分辨率、放大流程，而非某个参数</td></tr>
+<tr><td>规则的块状接缝</td><td>显存不足触发了分块解码</td><td>VAE Decode 的 tile 设置</td></tr>
+</tbody>
+</table>
+
+<div class="sd-bad">
+<span class="sd-lb">误区</span>
+「VAE 决定画风」——不是。画风由底模的 U-Net 决定，VAE 只负责最后一步的色彩还原与细节重建。换一个 VAE，不会把写实风格变成动漫，顶多是色彩和细节的观感有差别。
+</div>
+
+<div class="sd-out">
+<span class="sd-lb">本节收束</span>
+六个节点走完了：Checkpoint 掏出模型，CLIP 编码提示词，Empty Latent 给出起点，KSampler 按 steps/denoise 一路去噪，VAE Decode 把 <span class="t-latent">LATENT</span> 变回 <span class="t-image">IMAGE</span>，图已经落盘。散落在各节点上的参数——CFG、steps、denoise、seed……接下来一节把它们收进一张表。
+</div>
+</section>
+
+<!-- ==== 70-params.html ==== -->
+<section id="params">
+<span class="sd-tag">[ 13 · 速查 ]</span>
+<h2>参数总表：每个旋钮挂在哪个节点</h2>
+<p class="sd-lead">前面十二节把每个参数出现的位置和原理讲了一遍；这一节反过来，把它们摊平成一张表，方便以后回查。整条流水线上真正需要你决定的参数并不多，而且它们分属不同节点、互不干扰——搞清楚「这个旋钮挂在谁身上」，比记住一个推荐数值更有用。这也是为什么排障最有效的做法不是把参数挨个试一遍，而是先想清楚问题出在哪个节点，再去动挂在那个节点上的参数——第 14 节会把这套方法具体演示一遍。</p>
+
+<div class="sd-x">
+<table class="sd-t">
+<thead>
+<tr><th>参数</th><th>挂在哪个节点</th><th>它到底控制什么</th><th>调大会怎样</th><th>调小会怎样</th><th class="c">展开</th></tr>
+</thead>
+<tbody>
+<tr data-param="ckpt">
+<td><code>ckpt_name</code></td>
+<td>Load Checkpoint</td>
+<td>一次性决定 <span class="t-model">MODEL</span>／<span class="t-clip">CLIP</span>／<span class="t-vae">VAE</span> 三套权重的来源</td>
+<td>不存在数值意义上的「调大」——换成风格差异更大的 checkpoint，画风、对提示词的理解方式、默认色彩基调会整体跟着变</td>
+<td>同上，只有「换或不换」，没有「调小」</td>
+<td class="c sd-m">06</td>
+</tr>
+<tr data-param="prompt">
+<td>正向 prompt</td>
+<td>CLIP Text Encode（正）</td>
+<td>告诉每一步去噪该往哪个语义方向靠</td>
+<td>描述越具体、权重语法（如 <code>(词:1.4)</code>）调得越高，该语义方向被放大得越狠，容易压过其它描述、甚至局部畸变</td>
+<td>描述简略或权重调低，这部分对结果的拉力变弱，容易被其它更强的描述盖过</td>
+<td class="c sd-m">07·08</td>
+</tr>
+<tr data-param="prompt-neg">
+<td>负向 prompt</td>
+<td>CLIP Text Encode（负）</td>
+<td>告诉 CFG 该往哪个方向「推开」</td>
+<td>堆得越多，ε<sub>uncond</sub> 这个基准被推得越远、去噪方向整体偏转越大；但词多了每个词的分量也被摊薄，而且同样占那 75 个内容槽位，堆过头反而会连带压掉不该压的细节</td>
+<td>留空或很少，抑制作用弱，等于只剩正向那一路在起作用</td>
+<td class="c sd-m">08</td>
+</tr>
+<tr data-param="size">
+<td><code>width</code>／<code>height</code></td>
+<td>Empty Latent Image</td>
+<td>潜空间画布的边长，决定构图容纳的空间（需为 8 的倍数）</td>
+<td>画布变大，同样的描述被稀释到更大的画面里；远离底模训练时的原生分辨率还会出现构图重复、多头多肢</td>
+<td>元素被压得更挤、细节更容易糊；同样过小也会偏离原生分辨率</td>
+<td class="c sd-m">09</td>
+</tr>
+<tr data-param="batch">
+<td><code>batch_size</code></td>
+<td>Empty Latent Image</td>
+<td>一次并排生成几张图，每张各用一份不同的初始噪声</td>
+<td>一次拿到更多候选构图方便对比，显存占用和总耗时随之上升</td>
+<td>候选变少，但更省资源</td>
+<td class="c sd-m">09</td>
+</tr>
+<tr data-param="seed">
+<td><code>seed</code></td>
+<td>KSampler</td>
+<td>初始噪声的生成种子——整条链唯一的随机性来源。注意它长在 KSampler 上，不在 Empty Latent Image 上</td>
+<td>换一个新 seed，构图、主体位置、细节走向整体重新洗一遍</td>
+<td>固定不变、其它参数也不变，结果完全一致——这是唯一能让结果可复现的开关</td>
+<td class="c sd-m">09</td>
+</tr>
+<tr data-param="seedmode">
+<td><code>control_after_generate</code></td>
+<td>Empty Latent Image（前端控件）</td>
+<td>每次点 Queue 之后 seed 自动怎么变：fixed／increment／decrement／randomize</td>
+<td>设成 increment／randomize，每次结果都不同，适合批量探索</td>
+<td>设成 fixed，把 seed 钉死，才能做真正的单变量对比</td>
+<td class="c sd-m">09</td>
+</tr>
+<tr data-param="steps">
+<td><code>steps</code></td>
+<td>KSampler</td>
+<td>把从纯噪声走回清晰图像分成几步做数值积分</td>
+<td>步子跨度更小、更接近连续轨迹；过了收敛点后再加，只是白白多跑前向，不再带来变化</td>
+<td>步子跨度变大，容易跳过该走的路径，图像结构不稳；ancestral／SDE 类采样器还会因为步数变化直接换一张图</td>
+<td class="c sd-m">10·11</td>
+</tr>
+<tr data-param="cfg">
+<td><code>cfg</code></td>
+<td>KSampler</td>
+<td>沿「正向−负向」这条方向放大多少倍</td>
+<td>对比度上升、边缘变硬、色彩趋于饱和；调过头会过曝、局部烧焦、出现伪影</td>
+<td>画面更柔和，但对提示词的服从度下降，构图可能明显偏离描述</td>
+<td class="c sd-m">08</td>
+</tr>
+<tr data-param="sampler">
+<td><code>sampler_name</code></td>
+<td>KSampler</td>
+<td>两个路标之间具体怎么走这条路</td>
+<td>换成 ancestral／SDE 类，每步会注入新噪声，图像不再收敛，等于每次都在探索新构图；换成高阶方法单步要多次前向，同样 steps 下更接近收敛，但更耗时</td>
+<td>这是类别参数，没有数值意义上的「调小」，只有换成低阶／确定性方法</td>
+<td class="c sd-m">10</td>
+</tr>
+<tr data-param="scheduler">
+<td><code>scheduler</code></td>
+<td>KSampler</td>
+<td>把 steps 个路标（sigma）安排在哪些噪声水平上——路标的疏密分布</td>
+<td>换一种分布，靠前更密集就是把「精修预算」分给早期构图阶段</td>
+<td>换一种分布，靠后更密集就是把预算分给后期细节阶段</td>
+<td class="c sd-m">10</td>
+</tr>
+<tr data-param="denoise">
+<td><code>denoise</code></td>
+<td>KSampler</td>
+<td>从哪个噪声水平起步——1.0 表示从纯噪声开始</td>
+<td>趋近或等于 1.0，从更早、噪声更多的阶段起步，走完整条去噪路径</td>
+<td>起步点噪声更少；纯文生图（Empty Latent 起步）调小会导致该走的路没走完，留下没擦干净的噪声，发灰发糊</td>
+<td class="c sd-m">11</td>
+</tr>
+<tr data-param="vae">
+<td>VAE 来源</td>
+<td>Load Checkpoint（内置）／Load VAE（外挂，接到 VAE Decode）</td>
+<td>潜空间→像素这一步具体用哪套编解码权重</td>
+<td>类别参数——换成和 checkpoint 不匹配的 VAE，画面容易整体发灰、偏色</td>
+<td>换成匹配的外挂 VAE，有时能在细节还原上更好一些</td>
+<td class="c sd-m">12</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="sd-key"><span class="sd-lb">读表直觉 · 想复现</span>想让结果可复现：先固定 <code>seed</code>，再动别的参数——否则你没法分清眼前的变化，是参数带来的，还是换了一份初始噪声带来的。很多人调到最后说不清是哪个改动起了作用，根源往往就是没有先把 seed 钉死。</div>
+<div class="sd-key"><span class="sd-lb">读表直觉 · 想省时间</span>真正决定耗时的是 <code>steps × 采样器阶数 × (cfg 开则 ×2)</code> 这一个乘积，不是任何单一参数——盲目降 steps 或降分辨率，省下来的时间可能远不如先看清这个乘积。同样 steps 下，cfg 从开启变成关闭（cfg=1）相当于把这一路的前向直接省掉一半，这也是这个乘积里最直接能省的那一项。</div>
+<div class="sd-key"><span class="sd-lb">读表直觉 · 想改画风</span>先换 <code>ckpt_name</code>，不要指望调采样器——sampler_name／scheduler 影响的是同样步数下走到收敛点的程度，不是画风的来源；画风由 checkpoint 里的权重决定。同一个 checkpoint、同一个 seed，换几种 sampler_name 跑一遍就能验证这件事：画面整体风格大同小异，差别只集中在收敛程度和局部细节上。</div>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span>互动 <b>一次只动一个</b></div>
+<div class="bd">
+<p class="sd-cap">选一个想动的参数，看它落在表里的哪一行，以及动它之前应该先固定什么。这不是在讲这个参数该设多少，是在练「控制变量」这件事本身——下面给出的说明也不是「标准答案」，换个场景，该先固定的东西可能还不止一个。</p>
+<div class="sd-x"><div id="sd-g-once-seg"></div></div>
+<div id="sd-g-oncenote" role="status" aria-live="polite"></div>
+</div>
+</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>这张表是静态的知识——它告诉你每个旋钮是什么、动了会怎样，但不会替你判断眼下这张图错在哪个环节。下一节把这张表倒过来用：从一个具体症状出发，顺藤摸瓜找到该动的那个参数。如果你手里正好有一张不满意的图，可以直接跳到下一节，从症状开始查起。</div>
+</section>
+
+<section id="debug">
+<span class="sd-tag">[ 14 · 决策 ]</span>
+<h2>图不对时，该动哪个节点的哪个参数</h2>
+<p class="sd-lead">拿到一张不满意的图，先别急着挨个参数试。按下面这条决策链走：从你看到的症状出发，一路往下问，落到具体该动的节点和参数——每一步都给出「为什么」，改完之后先固定 seed 再对比，才知道是不是真的改对了。</p>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span>排障 <b>决策链</b>（点开你看到的症状，可以逐层展开）</div>
+<div class="bd">
+
+<details class="sd-more sd-g-symdet" data-sym="gray">
+<summary>整体发灰、颜色偏淡、像蒙了一层</summary>
+<div class="bd">
+<p><b>先查：</b>VAE Decode 用的 <span class="t-vae">VAE</span> 是不是和 checkpoint 不匹配——外挂了一个和当前模型不配套的 Load VAE，或者反过来该用外挂却用了不对的内置解码器。VAE 编解码器如果和训练时不是一套，解码出来的颜色范围会整体跑偏，这是发灰最常见的成因。</p>
+<p><b>怎么办：</b>换回 checkpoint 内置的 VAE，或换一个官方标配的 VAE 试一次。</p>
+<details class="sd-more sd-g-symdet">
+<summary>换过 VAE 还是发灰？再查这个</summary>
+<div class="bd">
+<p>查 KSampler 的 <code>denoise</code> 是不是被调到了 1.0 以下。<code>denoise</code> 决定从哪个噪声水平起步；纯文生图（从 Empty Latent Image 起步）如果 <code>denoise</code>&lt;1.0，前面该走的去噪路径没走完，会直接留下没擦干净的噪声，看起来就是灰蒙蒙的。</p>
+<p><b>怎么办：</b>把 <code>denoise</code> 调回 1.0。</p>
+<p><b>验证：</b>固定 seed，只改这一个参数，对比两张图——发灰消失，说明就是这个原因。</p>
+</div>
+</details>
+</div>
+</details>
+
+<details class="sd-more sd-g-symdet" data-sym="burnt">
+<summary>过饱和、边缘发硬、像烧焦</summary>
+<div class="bd">
+<p><b>先查：</b>KSampler 的 <code>cfg</code> 是不是偏高。<code>cfg</code> 是「沿正负提示词方向放大多少倍」的倍数，调得越高，对比度和饱和度会一起被放大，边缘变硬，调过头就是局部过曝、烧焦。</p>
+<p><b>怎么办：</b>降 <code>cfg</code> 是第一步，不是加负面提示词——负面提示词解决的是「画面里出现了不想要的东西」，不是「整体力度太猛」这件事。</p>
+<p><b>验证：</b>固定 seed，只降 <code>cfg</code>，对比对比度和饱和度是否回落。</p>
+</div>
+</details>
+
+<details class="sd-more sd-g-symdet" data-sym="deaf">
+<summary>完全不听提示词</summary>
+<div class="bd">
+<p><b>先查：</b>KSampler 的 <code>cfg</code> 是不是过低——<code>cfg</code> 太小，等于正负方向的放大倍数太小，等于几乎不做放大——<code>cfg</code> 趋近 1 时合成结果就等于 ε<sub>cond</sub> 本身，提示词的拉力最弱（要再小到 1 以下，才真的开始退向无条件预测）。这时不是模型「不听话」，是你根本没给它施加引导，自然谈不上「听不听话」。</p>
+<details class="sd-more sd-g-symdet">
+<summary>cfg 正常？再查这个</summary>
+<div class="bd">
+<p>查 CLIP Text Encode 里的 prompt 是不是超过了 75 个内容 token。上下文一共 77 token，首尾各占一个特殊标记，超出 75 的那部分内容<b>根本没有进入模型</b>，等于白写。</p>
+<p><b>怎么办：</b>把最重要的描述挪到前面，删掉后面被截断的部分。</p>
+<details class="sd-more sd-g-symdet">
+<summary>token 数没超？再查这个</summary>
+<div class="bd">
+<p>查关键词是不是被分词器拆成了碎片。分词不按单词切，罕见词、专有名词、中文词很容易被拆成好几个 token，权重语法（如 <code>(词:1.4)</code>）作用在 token embedding 上，词一旦被拆碎，这股拉力也被摊薄了。</p>
+<p><b>怎么办：</b>换成更常见的同义表达试一次。</p>
+</div>
+</details>
+</div>
+</details>
+<p><b>验证：</b>固定 seed，把 <code>cfg</code> 上下各挪一档跑三张对比——画面明显跟着变，说明 cfg 这一路是通的、问题在提示词那一侧；三张几乎没差别，说明提示词根本没进模型，直接去数内容 token。</p>
+</div>
+</details>
+
+<details class="sd-more sd-g-symdet" data-sym="compose">
+<summary>构图总是不对（人物出框、主体偏小）</summary>
+<div class="bd">
+<p><b>先查：</b>换一个 <code>seed</code>。整条链唯一的随机性来源，是 KSampler 按 seed 生成的那份初始噪声，构图很大程度上由它决定——<b>调 cfg、调 steps 基本救不回构图</b>，它们改变的是去噪的力度和精细程度，不是初始噪声里已经「埋」下的大致轮廓。</p>
+<details class="sd-more sd-g-symdet">
+<summary>换了几个 seed 都不对？再查这个</summary>
+<div class="bd">
+<p>查 <code>width</code>／<code>height</code> 是不是远离了底模训练时的原生分辨率。宽高需要是 8 的倍数，离原生分辨率越远，越容易出现出框、多头多肢这类结构性崩坏。</p>
+</div>
+</details>
+<p><b>验证：</b>固定其它参数，只换几个不同 seed 对比——构图问题跟着 seed 换，说明本来就是噪声决定的，该调的是 seed，不是 cfg／steps。</p>
+</div>
+</details>
+
+<details class="sd-more sd-g-symdet" data-sym="blurry">
+<summary>图很糊、细节像糊在一起</summary>
+<div class="bd">
+<p>这个症状有两种常见成因，先用下面的方法区分是哪一种。</p>
+<div class="sd-g2">
+<div><h4>情况 A · denoise 没到 1.0</h4><p class="sd-cap">纯文生图（从 Empty Latent Image 起步）如果 <code>denoise</code>&lt;1.0，去噪路径没走完，糊和发灰经常一起出现。先看 <code>denoise</code> 的数值。</p></div>
+<div><h4>情况 B · steps 太少</h4><p class="sd-cap"><code>steps</code> 不够，数值积分还没走到收敛点就被迫收尾，图像结构没画完整。<code>denoise</code> 已经是 1.0 时，多半是这种。</p></div>
+</div>
+<p><b>区分方法：</b>先看 <code>denoise</code> 是不是 1.0——不是，先调回 1.0 再看；如果已经是 1.0，固定 seed 只调大 <code>steps</code>，糊感随之减轻说明是步数不足，没变化则要往分辨率或 VAE 上找。</p>
+<p><b>验证：</b>固定 seed，单变量对比调整前后的结果。</p>
+</div>
+</details>
+
+<details class="sd-more sd-g-symdet" data-sym="texture">
+<summary>细纹理、小字始终糊</summary>
+<div class="bd">
+<p>这是潜空间这套表示的固有上限：512×512×3 的画面在链路里只有 64×64×4 个数可用，压缩 48 倍，细纹理、小字、密集网格是最先丢的那一批——<b>不是任何采样参数能解决的</b>，不用在 <code>denoise</code>／<code>steps</code>／<code>cfg</code> 上找原因。</p>
+<p><b>怎么办：</b>用更大分辨率生成，或者生成之后接一个放大流程处理。</p>
+</div>
+</details>
+
+<details class="sd-more sd-g-symdet" data-sym="inconsistent">
+<summary>每次生成结果都不一样，没法对比</summary>
+<div class="bd">
+<p><b>先查：</b>KSampler 上的 <code>control_after_generate</code> 是不是没设成 <code>fixed</code>。seed 是唯一的随机性来源，如果每次自动 increment／randomize，别的参数再怎么对齐也对比不了。</p>
+<details class="sd-more sd-g-symdet">
+<summary>已经是 fixed？再查这个</summary>
+<div class="bd">
+<p>查 KSampler 的 <code>sampler_name</code> 是不是 ancestral／SDE 类。这类采样器每一步都会重新注入噪声，不收敛——就算 seed 固定、steps 不变，结果依然不是唯一确定的。</p>
+</div>
+</details>
+<p><b>验证：</b>把 <code>control_after_generate</code> 设成 <code>fixed</code>，且换一个非 ancestral／SDE 的采样器，同样参数跑两次——图应该完全一致。这本身就是「调参前先固定 seed」这条准则最直接的验证。</p>
+</div>
+</details>
+
+<details class="sd-more sd-g-symdet" data-sym="slow">
+<summary>生成太慢</summary>
+<div class="bd">
+<p><b>先查：</b>别急着降分辨率，先算一下 <code>steps × 采样器阶数 × (cfg 开则 ×2)</code> 这个乘积——它才是真正决定前向次数、也就是耗时的东西。分辨率主要影响显存占用，对「跑多少次网络」影响没那么直接。</p>
+<p><b>怎么办：</b>记下当前 <code>steps</code>、所选 <code>sampler_name</code> 的阶数、<code>cfg</code> 是否开启，从这个乘积里最大的那个因子上省。</p>
+</div>
+</details>
+
+</div>
+</div>
+
+<p>下面是同一条决策链的平铺版本，方便扫读和以后回查——点开上面的症状会高亮对应这一行。</p>
+<div class="sd-x">
+<table class="sd-t">
+<thead><tr><th>症状</th><th>首选嫌疑</th><th>次选嫌疑</th><th class="c">章节</th></tr></thead>
+<tbody>
+<tr data-sym="gray"><td>整体发灰、颜色偏淡、像蒙了一层</td><td>VAE 是否和 checkpoint 不匹配</td><td>denoise 是否低于 1.0</td><td class="c sd-m">12·11</td></tr>
+<tr data-sym="burnt"><td>过饱和、边缘发硬、像烧焦</td><td>cfg 偏高</td><td>权重语法（<code>(词:1.4)</code>）调得过高，个别 token 的 embedding 被放大到分布外（第 07 节）</td><td class="c sd-m">08</td></tr>
+<tr data-sym="deaf"><td>完全不听提示词</td><td>cfg 偏低</td><td>prompt 超过 75 个内容 token 被截断，或关键词被拆碎</td><td class="c sd-m">08·07</td></tr>
+<tr data-sym="compose"><td>构图总是不对（出框、主体偏小）</td><td>换 seed（初始噪声决定构图）</td><td>width／height 远离底模原生分辨率</td><td class="c sd-m">09</td></tr>
+<tr data-sym="blurry"><td>图很糊、细节糊在一起</td><td>denoise 是否低于 1.0</td><td>steps 是否太少、没走到收敛点</td><td class="c sd-m">11·10</td></tr>
+<tr data-sym="texture"><td>细纹理、小字始终糊</td><td>潜空间压缩的固有损失（VAE）</td><td>分辨率太低</td><td class="c sd-m">04·12</td></tr>
+<tr data-sym="inconsistent"><td>每次结果都不一样，没法对比</td><td>control_after_generate 未设为 fixed</td><td>sampler_name 是 ancestral／SDE 类</td><td class="c sd-m">09·10</td></tr>
+<tr data-sym="slow"><td>生成太慢</td><td>steps × 采样器阶数 × cfg 这个乘积偏大</td><td>分辨率——但它对耗时的影响没有对显存那么直接</td><td class="c sd-m">11</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="sd-out"><span class="sd-lb">本节收束</span>顺着症状找到该动的参数，是这篇文章想教会你的方法，不是让你把这条决策链背下来。下一节反过来考你：把前面十四节里最容易被记错的几个说法拎出来，看你能不能当场纠偏。</div>
+</section>
+
+<!-- ==== 80-close.html ==== -->
+<section id="pitfalls">
+<span class="sd-tag">[ 15 · 校准 ]</span>
+<h2>常见误区与归位测验</h2>
+<p class="sd-lead">前面十四节各自讲清楚了一个节点或一个参数。这一节反过来：把网上最常见的几句「经验之谈」摆到桌面上，逐条说清楚它们错在哪、准确的说法应该是什么，再用一组测验检验这些机制是不是真的在你脑子里对上了号。</p>
+
+<h3>误区对照表</h3>
+<p>下面每条「常见说法」单看都不算离谱，只是对了一半，或者把原因归到了错的节点上。第二列说的是原因，不是简单判对错。</p>
+
+<div class="sd-x">
+<table class="sd-t">
+<thead><tr><th style="width:22%">常见说法</th><th>为什么不准确</th><th style="width:26%">准确的说法</th></tr></thead>
+<tbody>
+<tr><td>「去噪就是把模糊的图变清晰，像 Photoshop 的降噪滤镜」</td><td>滤镜是在一张<b>已经存在</b>的图上做平滑，抹掉的是画面里本来就有的噪点；这里是从一团纯随机噪声出发，没有「原图」可抹。</td><td>从纯噪声出发，一步步减出一张<b>原本不存在</b>的图（见第 03 节）。</td></tr>
+<tr><td>「模型预测的是图本身」</td><td>「干净图长什么样」的分布正是模型要学的全部难点；把目标换成分布已知、均值为 0 的噪声，等于把开放式生成问题转成有固定基准的残差回归，才训得动。</td><td>网络每一步预测的是<b>噪声 ε</b>，减掉预测值才是去噪（见第 03 节）。</td></tr>
+<tr><td>「潜空间就是把图缩小的缩略图」</td><td>缩略图是像素平均，潜空间是 VAE 学到的语义级压缩；64×64 里每个位置编码的是原图对应 8×8 区块的<b>语义与结构</b>，不是那 64 个像素的颜色平均。</td><td>潜空间是换了一套表示，不是把图缩小（见第 04 节）。</td></tr>
+<tr><td>「CFG 就是提示词权重，比如给某个词加括号加权重」</td><td>权重语法（如 <code>(word:1.3)</code>）改的是 CLIP 编码阶段的 token embedding，只生效一次；CFG 改的是 KSampler 里<b>每一步</b>怎么合成两路噪声预测，作用的节点和时机完全不同。</td><td>权重语法与 CFG 是两件不同机制，分别对应第 07 节与第 08 节。</td></tr>
+<tr><td>「CFG 越高，模型越听话」</td><td>CFG 变大不是「更遵循提示词」的开关，而是把 <code>ε_cond − ε_uncond</code> 这个方向放大的倍数；放大到一定程度就会冲出模型训练时见过的分布。</td><td>CFG 越高是越<b>极端</b>，过饱和、边缘发焦是冲出分布的信号（见第 08 节）。</td></tr>
+<tr><td>「负面提示词能把画面里的东西删掉」</td><td>负面提示词只是改变了 <code>ε_uncond</code>，从而改变了 <code>ε_cond − ε_uncond</code> 这个去噪方向；它影响的是「该往哪个方向走」，不是在已经生成的像素上做减法。</td><td>负面提示词改变去噪方向，不是删除元素（见第 08 节）。</td></tr>
+<tr><td>「提示词写得越长，模型考虑的信息越多」</td><td>CLIP 的上下文长度固定 77 个 token，首尾各占一个特殊标记，内容只能放 75 个；超出的部分在编码这一步就已经丢失。</td><td>超过 75 个内容 token 的部分被<b>直接截断</b>，彻底没进模型（见第 07 节）。</td></tr>
+<tr><td>「steps 越多，图越精细，一直加没坏处」</td><td>数值积分存在收敛点，继续加步数只是让轨迹更贴近同一个终点，超过后基本没有可感知的收益；对 ancestral / SDE 类采样器，每步还会重新注入随机噪声，改 steps 等于换了一条新轨迹。</td><td>有收敛点，超过无收益，某些采样器上甚至会换成另一张图（见第 10、11 节）。</td></tr>
+<tr><td>「denoise 是降噪强度，调小图会更干净」</td><td>denoise 实际控制的是<b>从哪个噪声水平起步</b>；纯文生图本就该从满噪声起步，调小意味着提前跳过了该走的步骤，该擦的噪声没擦完，画面反而发灰发糊。</td><td>denoise 控制起始噪声水平，不是滤镜式的降噪程度（见第 11 节）。</td></tr>
+<tr><td>「seed 是玄学幸运数字」</td><td>seed 只是初始噪声这一份随机数的起点，构图主要由它决定；换掉采样器、CFG、提示词中的任何一个，同一个 seed 也不再对应「熟悉」的结果。</td><td>seed 只在其余参数<b>完全不变</b>时才谈得上可复现（见第 09 节）。</td></tr>
+<tr><td>「VAE 决定画风」</td><td>画风来自 Load Checkpoint 里的 MODEL（U-Net）权重；VAE 只负责潜空间与像素之间的编解码，不改变构图与内容。</td><td>画风由 MODEL 决定，VAE 只管色彩还原与细节重建（见第 06、12 节）。</td></tr>
+<tr><td>「换个采样器就能提升画质上限」</td><td>采样器改变的是同样步数下轨迹逼近收敛点的效率，不改变模型本身能画出什么；画质上限由 MODEL 与 latent 压缩率决定。</td><td>采样器影响收敛效率，不是画质天花板（见第 10 节）。</td></tr>
+<tr><td>「图发灰、过饱和、烧焦都是一回事，随便调一个参数试试」</td><td>发灰发闷与过饱和烧焦是两类不同症状，对应不同环节：前者多半是 VAE 不匹配或 denoise 起点被误调小；后者多半是 CFG 开得过高。不分症状乱调，容易在错误的旋钮上反复试错。</td><td>先区分症状再选参数：发灰查 VAE 与 denoise，过饱和查 CFG（见第 11、12、14 节）。</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>归位测验</h3>
+<p>每一题考的是「这个改动会导致什么」，或者「该动哪个节点的哪个参数」，不考名词记忆。选项里的干扰项，都是上面表格里真实出现过的误区。</p>
+
+<div id="sd-h-quiz"></div>
+<p class="sd-h-score" id="sd-h-score" role="status" aria-live="polite"></p>
+
+<div class="sd-out">
+<span class="sd-lb">本节收束</span>
+误区大多出在两件事上：把「作用位置」搞混（CFG 与权重语法、VAE 与 MODEL），或者把「参数的字面意思」当成了它实际控制的东西（denoise、seed、steps）。回到具体节点、具体公式，这些误区基本都不攻自破。下一节把全文压成一张能反复回查的速查表。
+</div>
+</section>
+
+<section id="recap">
+<span class="sd-tag">[ 16 · 收口 ]</span>
+<h2>速查表</h2>
+<p class="sd-lead">这一节不讲新东西，只是把前面十五节压成一张能反复回查的表。以后想不起来哪个参数该动，先回这里找。</p>
+
+<div class="sd-key">
+<span class="sd-lb">一句话主线</span>
+一句提示词进来，先被 CLIP 编码成 <span class="t-cond">CONDITIONING</span>，指明去噪该往哪个方向走；KSampler 从一块纯噪声的 <span class="t-latent">LATENT</span> 出发，每一步只做一件事——问网络「这上面的噪声长什么样」，据此反解出一个一步到位的成品猜测，<b>然后只朝它走一小步</b>，再重新问一遍；如此重复 steps 次；这一切都在 8 倍下采样后的潜空间里进行，不在像素上算；最后 VAE Decode 把去噪完的 LATENT 解码回看得懂的 <span class="t-image">IMAGE</span>。全文十五节讲的都是这四句话里的某一个环节。
+</div>
+
+<h3>六节点速查</h3>
+<div class="sd-x">
+<table class="sd-t">
+<thead><tr><th>节点</th><th>输入类型</th><th>输出类型</th><th>负责什么</th><th>挂在它上面的参数</th></tr></thead>
+<tbody>
+<tr><td>Load Checkpoint</td><td class="c">—（起点）</td><td class="c"><span class="t-model">MODEL</span>·<span class="t-clip">CLIP</span>·<span class="t-vae">VAE</span></td><td>从一个模型文件里一次性拆出画图权重、文本编码器、编解码器三套权重，可分别替换</td><td>选择哪个 checkpoint 文件（第 06 节）</td></tr>
+<tr><td>CLIP Text Encode（正 / 负）</td><td class="c"><span class="t-clip">CLIP</span> + 文本</td><td class="c"><span class="t-cond">CONDITIONING</span></td><td>把提示词分词、编码成模型能读的语义向量；正负提示词各编码一路，供 KSampler 每步对比</td><td>提示词文本、权重语法如 <code>(word:1.3)</code>（第 07 节）</td></tr>
+<tr><td>Empty Latent Image</td><td class="c">—（起点）</td><td class="c"><span class="t-latent">LATENT</span>（纯噪声）</td><td>按宽高与批次开一块潜空间画布，初始内容是由 seed 决定的一份纯噪声</td><td>width / height、batch_size、seed（第 09 节）</td></tr>
+<tr><td>KSampler</td><td class="c"><span class="t-model">MODEL</span> + 2×<span class="t-cond">CONDITIONING</span> + <span class="t-latent">LATENT</span></td><td class="c"><span class="t-latent">LATENT</span>（去噪后）</td><td>整条流水线里唯一反复调用网络的节点：按 sampler / scheduler 规定的路径，把噪声一步步减掉</td><td>steps、cfg、sampler_name、scheduler、denoise（第 08~11 节）</td></tr>
+<tr><td>VAE Decode</td><td class="c"><span class="t-latent">LATENT</span> + <span class="t-vae">VAE</span></td><td class="c"><span class="t-image">IMAGE</span></td><td>把去噪完的潜空间张量转换回可看的像素图</td><td>基本无可调参数；画面发灰发糊多半要回头查这里是否匹配（第 12 节）</td></tr>
+<tr><td>Save Image</td><td class="c"><span class="t-image">IMAGE</span></td><td class="c">—（终点）</td><td>把 IMAGE 写成文件</td><td>文件名前缀；没有影响画面的参数</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>公式与量级速查</h3>
+<pre class="sd-flow">前向加噪（训练用，一步跳到任意 t）
+  x<sub>t</sub> = √ᾱ<sub>t</sub> · x<sub>0</sub> + √(1−ᾱ<sub>t</sub>) · ε
+
+CFG 合成（KSampler 每一步都做一次）
+  ε = ε<sub>uncond</sub> + scale × (ε<sub>cond</sub> − ε<sub>uncond</sub>)
+
+latent 形状（VAE 下采样 8 倍，通道从 3 变 4）
+  [B, 4, H/8, W/8]　　512×512 → 64×64×4，相对像素空间压缩 <b>48</b> 倍
+
+总前向次数（粗估）
+  steps × 采样器阶数 × (CFG 开则 ×2)
+
+CLIP 上下文
+  77 个 token（含首尾各 1 个特殊标记）　　内容最多 <b>75</b> 个，超出直接截断</pre>
+
+<h3>这条链之外：那些没讲的，其实都是链上某一段的变形</h3>
+
+<p>读到这里你可能会问：LoRA、ControlNet、图生图、高清修复呢？它们不是本文漏掉的东西，而是<b>对这条链上某个具体节点做的替换或增补</b>。看懂它改的是哪一段，就知道它会牵动哪些参数——这也是这条过程链真正的用处：它是一个能反复套用的取景框。</p>
+
+<div class="sd-x">
+<table class="sd-t">
+<thead><tr><th>扩展</th><th>它改的是链上哪一段</th><th>因此会牵动什么</th></tr></thead>
+<tbody>
+<tr><td><b>LoRA</b></td><td>在 <span class="t-model">MODEL</span> 与 <span class="t-clip">CLIP</span> 的权重上叠一层小的修正量，插在 Load Checkpoint 之后</td><td>改的是「预测噪声」这个动作本身与文本编码，所以它能换画风、加概念；不改采样流程，steps / CFG 的含义不变</td></tr>
+<tr><td><b>ControlNet</b></td><td>往 <span class="t-cond">CONDITIONING</span> 这一路再挂一支<b>空间条件</b>（边缘图、深度图、姿态骨架）</td><td>它补的正是第 09 节那个局限——seed 只能大致左右构图。多了一路条件，也就多了一组该调的强度参数</td></tr>
+<tr><td><b>图生图（img2img）</b></td><td>把 Empty Latent 换成 <span class="t-vae">VAE</span> <b>编码器</b>的输出，并且不从最大噪声起步</td><td>这就是第 11 节 <code>denoise</code> 的真正主场：它决定保留多少原图结构。第 12 节说的「编码器只在图生图出现」指的就是这里</td></tr>
+<tr><td><b>高清修复 / 放大</b></td><td>把整条链跑两遍：第一遍出小图，放大后作为第二遍的起点，第二遍用较小的 <code>denoise</code></td><td>它绕开的是第 04 节那个天花板——latent 只有 64×64×4，细节的上限在压缩时就定死了</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>下一步学什么</h3>
+<div class="sd-g3">
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span><b>想把机制看得更细</b></div>
+<div class="bd">
+<ul>
+<li>手写一遍 DDPM 采样循环——把第 03 节那段伪代码敲成能跑的代码，用来验证自己是不是真的理解了「预测噪声再减掉」，而不只是记住了一句话</li>
+<li>找一份代码量小的实现通读一遍——补上本文为了保证可读性略掉的 U-Net 与采样循环实现细节</li>
+<li>把中间的 latent 逐步解码出来看——每隔几步用 VAE Decode 解一次当前的 LATENT，能亲眼看到构图是在哪一步定下来的，弥补第 10 节只讲原理、没让你看见中间过程的局限</li>
+</ul>
+</div>
+</div>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span><b>想把出图质量做上去</b></div>
+<div class="bd">
+<ul>
+<li>放大与二次采样的工作流——解决 latent 只有 64×64×4、压缩率带来的细节天花板问题（第 04 节）</li>
+<li>区域控制（把画布分块、分别配提示词）——解决一句话很难同时精确控制画面多个区域的问题，受 77 token 上限约束（第 07 节）</li>
+<li>ControlNet 这类结构约束——解决 seed 与初始噪声只能大致影响构图、没法精确指定姿态与构图的问题（第 09 节）</li>
+</ul>
+</div>
+</div>
+
+<div class="sd-card">
+<div class="hd"><span class="pin" aria-hidden="true"></span><b>想做工程化</b></div>
+<div class="bd">
+<ul>
+<li>批量与队列——解决一次只能盯着一张图生成、没法系统比较不同参数组合的问题</li>
+<li>显存与分块解码——解决 VAE Decode 在大分辨率或大 batch 下显存不够的问题（第 12 节）</li>
+<li>workflow 的复用与参数化——把本文讲的六个节点和挂在它们身上的参数固化成模板，不用每次都手动重新摆</li>
+</ul>
+</div>
+</div>
+
+</div>
+
+<div class="sd-out">
+<span class="sd-lb">本节收束</span>
+回到开头那句提示词：<code>a sunset over mountains, calm lake</code> 敲下去的几秒钟里，它先被 CLIP 编码成 CONDITIONING；KSampler 拿着这份指引和一块纯噪声反复做同一件事——预测噪声、减掉一点，重复 steps 次，全过程都在压缩过的潜空间里；最后被 VAE Decode 解回像素。如果现在能说清这几秒里数据依次经过了哪些节点、每个节点改变了什么，以及图不对时该先动 CFG 还是先查 VAE、denoise，这套心智模型就已经能迁移到任何一个陌生的 ComfyUI workflow 上了。
+</div>
+</section>
+
+<footer class="sd-end">
+  一文读懂 Stable Diffusion + ComfyUI · 单文件交互长卷<br>
+  文中所有图像与曲线都是页面程序化实算生成的示意，不是任何真实模型的输出；具体数值均已标注口径。
+</footer>
+
+</main>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   SD —— 共享工具命名空间。
+   各章节片段只允许通过 SD.* 复用；自己的状态一律封在 IIFE 内，
+   不得新增全局变量，不得覆盖 SD 上已有的键。
+   ═══════════════════════════════════════════════════════════ */
+window.SD = (function () {
+  var SD = {};
+
+  /* ── 数学 ── */
+  SD.clamp = function (x, a, b) { return Math.min(b, Math.max(a, x)); };
+  SD.lerp = function (a, b, t) { return a + (b - a) * t; };
+  SD.dot = function (a, b) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+  SD.norm = function (a) { return Math.sqrt(SD.dot(a, a)); };
+  SD.softmax = function (a, t) {
+    var T = (t == null ? 1 : t), i, m = -Infinity, e = [], sum = 0, s = [];
+    for (i = 0; i < a.length; i++) { s.push(a[i] / T); if (s[i] > m) m = s[i]; }
+    for (i = 0; i < s.length; i++) { var x = Math.exp(s[i] - m); e.push(x); sum += x; }
+    for (i = 0; i < e.length; i++) e[i] /= sum;
+    return e;
+  };
+
+  /* ── 格式化 ── */
+  SD.fmt = function (x, d) { var n = (d == null ? 2 : d); return isFinite(x) ? x.toFixed(n) : '—'; };
+  SD.human = function (x) {
+    var u = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (var i = 0; i < u.length; i++) if (Math.abs(x) >= u[i][0]) { var y = x / u[i][0]; return y.toFixed(y < 10 ? 2 : 1) + u[i][1]; }
+    return String(Math.round(x));
+  };
+  SD.bytes = function (b) {
+    var u = [[Math.pow(1024, 4), 'TiB'], [Math.pow(1024, 3), 'GiB'], [Math.pow(1024, 2), 'MiB'], [1024, 'KiB']];
+    for (var i = 0; i < u.length; i++) if (b >= u[i][0]) { var y = b / u[i][0]; return y.toFixed(y < 10 ? 2 : 1) + ' ' + u[i][1]; }
+    return b.toFixed(0) + ' B';
+  };
+
+  /* ── 可复现随机（页面每次加载必须一模一样） ── */
+  SD.rng = function (seed) {
+    var a = seed >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  };
+  SD.gauss = function (rand) {
+    var u = 0, v = 0;
+    while (u === 0) u = rand();
+    while (v === 0) v = rand();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  /* 一整片可复现高斯噪声 */
+  SD.noiseField = function (n, seed) {
+    var r = SD.rng(seed), out = new Float32Array(n);
+    for (var i = 0; i < n; i++) out[i] = SD.gauss(r);
+    return out;
+  };
+
+  /* ── DOM ── */
+  SD.el = function (tag, cls, html) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html != null) n.innerHTML = html;
+    return n;
+  };
+  SD.$ = function (s, r) { return (r || document).querySelector(s); };
+  SD.$$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  /* ── 数据类型色：与 ComfyUI 连线约定一致 ── */
+  SD.TYPE = {
+    model:  { hex: '#B98CFF', label: 'MODEL' },
+    clip:   { hex: '#F5D76E', label: 'CLIP' },
+    cond:   { hex: '#FFA657', label: 'CONDITIONING' },
+    latent: { hex: '#FF87C3', label: 'LATENT' },
+    image:  { hex: '#76B5FF', label: 'IMAGE' },
+    vae:    { hex: '#FF8080', label: 'VAE' }
+  };
+  SD.typeColor = function (t) { return (SD.TYPE[t] || SD.TYPE.image).hex; };
+
+  /* ── canvas：统一处理 devicePixelRatio，避免各章节各写一套 ──
+     SD.canvas(host, w, h, {cls}) → {el, ctx, w, h, put(imgData), clear()}   */
+  SD.canvas = function (host, w, h, opt) {
+    var o = opt || {};
+    /* raw:true —— 后备存储就等于逻辑像素，不做 dpr 缩放。
+       用 putImageData 逐像素画的场景必须用它：putImageData 无视 ctx 的变换矩阵，
+       在 dpr 缩放过的画布上只会填到左上角一块。
+       这类画面本来就要靠 image-rendering:pixelated 放大，1:1 才是对的。 */
+    var dpr = o.raw ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    var cv = document.createElement('canvas');
+    cv.className = 'sd-canvas' + (o.cls ? ' ' + o.cls : '');
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = (o.cssW || w) + 'px'; cv.style.height = (o.cssH || h) + 'px';
+    if (o.label) { cv.setAttribute('role', 'img'); cv.setAttribute('aria-label', o.label); }
+    else cv.setAttribute('aria-hidden', 'true');
+    var ctx = cv.getContext('2d');
+    if (dpr !== 1) ctx.scale(dpr, dpr);
+    if (host) host.appendChild(cv);
+    return {
+      el: cv, ctx: ctx, w: w, h: h, dpr: dpr,
+      clear: function () { ctx.clearRect(0, 0, w, h); },
+      setLabel: function (s) { if (s) cv.setAttribute('aria-label', s); }
+    };
+  };
+
+  /* ── 全文共用的「目标图」x0 ──
+     必须程序化生成：单文件离线，不能引外部图片。
+     画一幅极简日落风景，返回 [-1,1] 归一化的 RGB 平面数据。  */
+  SD.SCENE = 96;   /* x0 的边长（潜空间演示会用它的 1/8） */
+  SD.scene = function (S) {
+    var N = S || SD.SCENE;
+    var cv = document.createElement('canvas'); cv.width = N; cv.height = N;
+    var c = cv.getContext('2d');
+    /* 天空 */
+    var sky = c.createLinearGradient(0, 0, 0, N * 0.62);
+    sky.addColorStop(0, '#1B2A5E'); sky.addColorStop(0.55, '#8E4B7A'); sky.addColorStop(1, '#F0894B');
+    c.fillStyle = sky; c.fillRect(0, 0, N, N * 0.62);
+    /* 太阳 */
+    c.fillStyle = '#FFD98A';
+    c.beginPath(); c.arc(N * 0.66, N * 0.44, N * 0.10, 0, Math.PI * 2); c.fill();
+    /* 远山 */
+    c.fillStyle = '#3A2B52';
+    c.beginPath(); c.moveTo(0, N * 0.62); c.lineTo(N * 0.30, N * 0.34); c.lineTo(N * 0.58, N * 0.62); c.closePath(); c.fill();
+    c.fillStyle = '#2A1F3D';
+    c.beginPath(); c.moveTo(N * 0.40, N * 0.62); c.lineTo(N * 0.74, N * 0.40); c.lineTo(N, N * 0.62); c.closePath(); c.fill();
+    /* 水面 */
+    var wa = c.createLinearGradient(0, N * 0.62, 0, N);
+    wa.addColorStop(0, '#C0653F'); wa.addColorStop(1, '#241A33');
+    c.fillStyle = wa; c.fillRect(0, N * 0.62, N, N * 0.38);
+    /* 水面反光条纹 */
+    c.fillStyle = 'rgba(255,220,160,.34)';
+    for (var y = N * 0.66; y < N * 0.98; y += Math.max(2, N * 0.035)) {
+      var wdt = N * 0.16 * (1 - (y / N - 0.62) * 1.4);
+      c.fillRect(N * 0.66 - wdt / 2, y, Math.max(2, wdt), Math.max(1, N * 0.012));
+    }
+    var d = c.getImageData(0, 0, N, N).data;
+    var out = new Float32Array(N * N * 3);
+    for (var i = 0, p = 0; i < N * N; i++) {
+      out[p++] = d[i * 4] / 127.5 - 1;
+      out[p++] = d[i * 4 + 1] / 127.5 - 1;
+      out[p++] = d[i * 4 + 2] / 127.5 - 1;
+    }
+    return { data: out, size: N };
+  };
+
+  /* ── DDPM 前向加噪表 ──
+     线性 beta 从 1e-4 到 0.02，T=1000（原始 DDPM 设定）。
+     ᾱ_t = Π(1−β_i)，前向：x_t = √ᾱ_t · x_0 + √(1−ᾱ_t) · ε        */
+  SD.T = 1000;
+  SD.schedules = (function () {
+    var T = 1000, i;
+    /* 原始 DDPM 的线性表：β 从 1e-4 线性升到 0.02 */
+    var lb = new Float64Array(T), la = new Float64Array(T), acc = 1;
+    for (i = 0; i < T; i++) { lb[i] = 1e-4 + (0.02 - 1e-4) * i / (T - 1); acc *= (1 - lb[i]); la[i] = acc; }
+    /* 余弦表：ᾱ_t = f(t)/f(0)，f(t) = cos²((t/T + s)/(1+s) · π/2)，s = 0.008。
+       它之所以被提出来，正是因为线性表把信号毁得太早——见首屏里两种表的对比。 */
+    var ca = new Float64Array(T), cb = new Float64Array(T), sft = 0.008;
+    function f(u) { var x = (u + sft) / (1 + sft) * Math.PI / 2; var c = Math.cos(x); return c * c; }
+    var f0 = f(0);
+    for (i = 0; i < T; i++) ca[i] = f(i / (T - 1)) / f0;
+    for (i = 0; i < T; i++) cb[i] = SD.clamp(1 - ca[i] / (i === 0 ? 1 : ca[i - 1]), 0, 0.999);
+    return {
+      linear: { T: T, betas: lb, abar: la, name: '线性（原始 DDPM）' },
+      cosine: { T: T, betas: cb, abar: ca, name: '余弦' }
+    };
+  })();
+  SD.schedule = SD.schedules.cosine;   /* 默认用余弦：线性表的轨迹绝大部分看上去都是纯噪声 */
+  /* 把 x_0 与一份固定噪声按 t 混合，写进 ImageData */
+  SD.diffuse = function (ctx, x0, eps, t, S, scale, sched) {
+    var sc = sched || SD.schedule;
+    var ab = sc.abar[SD.clamp(t | 0, 0, SD.T - 1)];
+    var a = Math.sqrt(ab), b = Math.sqrt(1 - ab);
+    var px = Math.max(1, Math.round((scale || 1)));
+    var img = ctx.createImageData(S * px, S * px);
+    var D = img.data;
+    for (var y = 0; y < S; y++) for (var x = 0; x < S; x++) {
+      var si = (y * S + x) * 3;
+      var r = SD.clamp((a * x0[si] + b * eps[si]) * 127.5 + 127.5, 0, 255);
+      var g = SD.clamp((a * x0[si + 1] + b * eps[si + 1]) * 127.5 + 127.5, 0, 255);
+      var bl = SD.clamp((a * x0[si + 2] + b * eps[si + 2]) * 127.5 + 127.5, 0, 255);
+      for (var dy = 0; dy < px; dy++) for (var dx = 0; dx < px; dx++) {
+        var di = ((y * px + dy) * S * px + (x * px + dx)) * 4;
+        D[di] = r; D[di + 1] = g; D[di + 2] = bl; D[di + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return { abar: ab, sqrtAbar: a, sqrtOne: b };
+  };
+
+  /* ── 节点流程图 ──
+     SD.graph(host, nodes, links, {onPick, title})
+     nodes: [{id, title, sub, x, y, w, h}]（x/y/w/h 为图坐标）
+     links: [{from, to, type}]  type 决定连线颜色
+     整组只占一个 Tab 站，方向键在节点间移动。                        */
+  SD.graph = function (host, nodes, links, opt) {
+    var o = opt || {};
+    var pad = 14, W = 0, H = 0, i;
+    for (i = 0; i < nodes.length; i++) {
+      nodes[i].w = nodes[i].w || 132; nodes[i].h = nodes[i].h || 46;
+      W = Math.max(W, nodes[i].x + nodes[i].w); H = Math.max(H, nodes[i].y + nodes[i].h);
+    }
+    W += pad * 2; H += pad * 2 + 8;
+    var NS = 'http://www.w3.org/2000/svg';
+    host.innerHTML = '';
+    var wrap = SD.el('div', 'sd-x');
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'sd-svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('role', 'group');
+    if (o.title) svg.setAttribute('aria-label', o.title);
+    var byId = {};
+    for (i = 0; i < nodes.length; i++) byId[nodes[i].id] = nodes[i];
+
+    /* 连线先画，压在节点下面 */
+    links.forEach(function (lk) {
+      var a = byId[lk.from], b = byId[lk.to];
+      if (!a || !b) return;
+      var x1 = a.x + a.w + pad, y1 = a.y + a.h / 2 + pad;
+      var x2 = b.x + pad, y2 = b.y + b.h / 2 + pad;
+      var mx = (x1 + x2) / 2;
+      var p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', 'M ' + x1 + ' ' + y1 + ' C ' + mx + ' ' + y1 + ', ' + mx + ' ' + y2 + ', ' + x2 + ' ' + y2);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', SD.typeColor(lk.type));
+      p.setAttribute('stroke-width', '1.6');
+      p.setAttribute('opacity', '.85');
+      svg.appendChild(p);
+      var d = document.createElementNS(NS, 'circle');
+      d.setAttribute('cx', x2); d.setAttribute('cy', y2); d.setAttribute('r', '2.6');
+      d.setAttribute('fill', SD.typeColor(lk.type));
+      svg.appendChild(d);
+    });
+
+    var gs = [];
+    nodes.forEach(function (n, idx) {
+      var g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', 'sd-node');
+      g.setAttribute('transform', 'translate(' + (n.x + pad) + ',' + (n.y + pad) + ')');
+      g.setAttribute('role', 'button');
+      g.setAttribute('tabindex', idx === 0 ? '0' : '-1');
+      g.setAttribute('aria-label', n.title + (n.sub ? '：' + n.sub : ''));
+      var r = document.createElementNS(NS, 'rect');
+      r.setAttribute('class', 'box');
+      r.setAttribute('width', n.w); r.setAttribute('height', n.h);
+      r.setAttribute('rx', '6');
+      g.appendChild(r);
+      var t1 = document.createElementNS(NS, 'text');
+      t1.setAttribute('class', 'tt'); t1.setAttribute('x', '10'); t1.setAttribute('y', n.sub ? 20 : n.h / 2 + 4);
+      t1.textContent = n.title; g.appendChild(t1);
+      if (n.sub) {
+        var t2 = document.createElementNS(NS, 'text');
+        t2.setAttribute('class', 'st'); t2.setAttribute('x', '10'); t2.setAttribute('y', 35);
+        t2.textContent = n.sub; g.appendChild(t2);
+      }
+      function pick() {
+        gs.forEach(function (x, j) { x.classList.toggle('on', j === idx); x.setAttribute('tabindex', j === idx ? '0' : '-1'); });
+        if (o.onPick) o.onPick(n.id, n, idx);
+      }
+      g.addEventListener('click', pick);
+      g.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
+        else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); var nx = gs[(idx + 1) % gs.length]; nx.setAttribute('tabindex', '0'); nx.focus(); }
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); var pv = gs[(idx - 1 + gs.length) % gs.length]; pv.setAttribute('tabindex', '0'); pv.focus(); }
+      });
+      svg.appendChild(g); gs.push(g);
+    });
+    wrap.appendChild(svg); host.appendChild(wrap);
+    return {
+      svg: svg, nodes: gs,
+      select: function (id) {
+        nodes.forEach(function (n, j) { gs[j].classList.toggle('on', n.id === id); });
+      }
+    };
+  };
+
+  /* ── 分段按钮 ── */
+  SD.seg = function (host, items, opt) {
+    var o = { active: 0 };
+    if (opt) for (var k in opt) o[k] = opt[k];
+    host.innerHTML = '';
+    var box = SD.el('div', 'sd-seg');
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', o.label || '显示模式切换');
+    var btns = items.map(function (it, i) {
+      var b = SD.el('button', null, it.label);
+      b.type = 'button';
+      b.addEventListener('click', function () { set(i); if (o.onPick) o.onPick(it.value != null ? it.value : i, i); });
+      box.appendChild(b); return b;
+    });
+    host.appendChild(box);
+    function set(i) { btns.forEach(function (b, j) { b.classList.toggle('on', j === i); b.setAttribute('aria-pressed', j === i ? 'true' : 'false'); }); }
+    set(o.active);
+    return { set: set, btns: btns };
+  };
+
+  /* ── Tabs（完整 ARIA + 方向键） ── */
+  var tabSeq = 0;
+  SD.tabs = function (host, items, opt) {
+    var o = opt || {};
+    host.innerHTML = '';
+    var uid = 'sd-tabs-' + (++tabSeq);
+    var bar = SD.el('div', 'sd-tabs'), body = SD.el('div', 'sd-tabbody');
+    bar.setAttribute('role', 'tablist');
+    body.setAttribute('role', 'tabpanel'); body.id = uid + '-panel'; body.tabIndex = 0;
+    var btns = items.map(function (it, i) {
+      var b = SD.el('button', null, it.label);
+      b.type = 'button'; b.setAttribute('role', 'tab');
+      b.id = uid + '-tab-' + i; b.setAttribute('aria-controls', body.id);
+      b.addEventListener('click', function () { pick(i); });
+      bar.appendChild(b); return b;
+    });
+    bar.addEventListener('keydown', function (e) {
+      var cur = btns.indexOf(document.activeElement);
+      if (cur < 0) return;
+      var nx = null;
+      if (e.key === 'ArrowRight') nx = (cur + 1) % btns.length;
+      else if (e.key === 'ArrowLeft') nx = (cur - 1 + btns.length) % btns.length;
+      else if (e.key === 'Home') nx = 0;
+      else if (e.key === 'End') nx = btns.length - 1;
+      if (nx === null) return;
+      e.preventDefault(); pick(nx); btns[nx].focus();
+    });
+    host.appendChild(bar); host.appendChild(body);
+    function pick(i) {
+      btns.forEach(function (b, j) {
+        var on = j === i;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+        b.tabIndex = on ? 0 : -1;
+      });
+      body.setAttribute('aria-labelledby', btns[i].id);
+      body.innerHTML = '';
+      items[i].render(body);
+      if (o.onPick) o.onPick(i);
+    }
+    pick(o.active || 0);
+    return { pick: pick, body: body };
+  };
+
+  /* ── 步骤器 ── */
+  SD.stepper = function (host, steps, opt) {
+    var o = opt || {}, cur = 0;
+    host.innerHTML = '';
+    var bar = SD.el('div', 'sd-steps');
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', o.label || '流程步骤');
+    var btns = steps.map(function (s, i) {
+      var b = SD.el('button', null, (i + 1) + ' · ' + s.label);
+      b.type = 'button';
+      b.addEventListener('click', function () { go(i); });
+      bar.appendChild(b); return b;
+    });
+    host.appendChild(bar);
+    function go(i) {
+      cur = SD.clamp(i, 0, steps.length - 1);
+      btns.forEach(function (b, j) {
+        b.classList.toggle('on', j === cur);
+        b.classList.toggle('past', j < cur);
+        if (j === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+      });
+      if (o.onStep) o.onStep(cur);
+    }
+    go(o.active || 0);
+    return { go: go, next: function () { go(cur + 1); }, prev: function () { go(cur - 1); }, cur: function () { return cur; } };
+  };
+
+  /* ── 测验（对错不只靠颜色） ── */
+  SD.quiz = function (host, items) {
+    host.innerHTML = '';
+    items.forEach(function (it, qi) {
+      var box = SD.el('div', 'sd-qz');
+      box.appendChild(SD.el('div', 'ask', '<span class="no">Q' + (qi + 1) + '</span>' + it.q));
+      var why = SD.el('div', 'sd-why', it.why);
+      why.setAttribute('role', 'status');
+      var btns = it.opts.map(function (s, i) {
+        var b = SD.el('button', 'sd-op', '<span class="mk">' + 'ABCD'[i] + '</span>' + s);
+        b.type = 'button';
+        b.addEventListener('click', function () {
+          btns.forEach(function (x, j) {
+            x.classList.remove('yes', 'no');
+            var mk = x.querySelector('.mk');
+            if (mk) mk.textContent = 'ABCD'[j];
+            x.setAttribute('aria-pressed', j === i ? 'true' : 'false');
+            if (j === it.ans) { x.classList.add('yes'); if (mk) mk.textContent = '✓'; }
+          });
+          if (i !== it.ans) { b.classList.add('no'); var m2 = b.querySelector('.mk'); if (m2) m2.textContent = '✗'; }
+          why.classList.add('show');
+        });
+        box.appendChild(b); return b;
+      });
+      box.appendChild(why);
+      host.appendChild(box);
+    });
+  };
+
+  /* ── 生命周期 ── */
+  var lazy = [], readyFired = false;
+  SD.onVisible = function (el, fn) { if (el) lazy.push([el, fn]); };
+  SD.ready = function (fn) { if (readyFired) { fn(); return; } document.addEventListener('sd:ready', fn); };
+  SD.reduced = function () { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var flow = document.getElementById('sd-flow');
+    var chain = document.querySelector('.sd-chain');
+    function onScroll() {
+      var h = document.documentElement, max = h.scrollHeight - h.clientHeight;
+      var p = max > 0 ? SD.clamp(h.scrollTop / max, 0, 1) : 0;
+      if (flow && chain) flow.style.height = (chain.clientHeight - 12) * p + 'px';
+    }
+    document.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    onScroll();
+
+    /* 当前节点高亮：按滚动位置直接算，避免 IO 在没有 section 命中时留下陈旧高亮 */
+    var links = SD.$$('.sd-rail a'), map = {};
+    links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
+    var secs = SD.$$('main > section[id]'), curId = null;
+    function markCurrent() {
+      if (!secs.length) return;
+      var line = window.scrollY + window.innerHeight * 0.28;
+      var pick = secs[0];
+      for (var i = 0; i < secs.length; i++) { if (secs[i].offsetTop <= line) pick = secs[i]; else break; }
+      var id = (line < secs[0].offsetTop) ? null : pick.id;
+      if (id === curId) return;
+      curId = id;
+      links.forEach(function (a) { a.classList.remove('on'); a.removeAttribute('aria-current'); });
+      if (id && map[id]) { map[id].classList.add('on'); map[id].setAttribute('aria-current', 'true'); }
+    }
+    document.addEventListener('scroll', markCurrent, { passive: true });
+    window.addEventListener('resize', markCurrent);
+    markCurrent();
+
+    var lio = new IntersectionObserver(function (es, obs) {
+      es.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        obs.unobserve(e.target);
+        for (var i = 0; i < lazy.length; i++) {
+          if (lazy[i][0] === e.target) { try { lazy[i][1](); } catch (err) { console.warn('lazy init failed', err); } }
+        }
+      });
+    }, { rootMargin: '240px 0px' });
+
+    readyFired = true;
+    document.dispatchEvent(new CustomEvent('sd:ready'));
+    lazy.forEach(function (p) { lio.observe(p[0]); });
+
+    /* 滑杆多为非线性刻度，把可见读数同步进 aria-valuetext */
+    function syncValueText(sl) {
+      var rd = null, sib = sl.nextElementSibling;
+      while (sib && !rd) {
+        if (sib.classList && sib.classList.contains('sd-rd')) rd = sib;
+        else if (sib.tagName === 'INPUT' && sib.type === 'range') break;
+        else if (sib.querySelector) rd = sib.querySelector('.sd-rd');
+        sib = sib.nextElementSibling;
+      }
+      var txt = rd && rd.textContent.trim();
+      if (txt) sl.setAttribute('aria-valuetext', txt);
+    }
+    document.addEventListener('input', function (e) {
+      var t = e.target;
+      if (t && t.tagName === 'INPUT' && t.type === 'range') setTimeout(function () { syncValueText(t); }, 0);
+    }, true);
+    setTimeout(function () { SD.$$('input[type=range]').forEach(syncValueText); }, 300);
+  });
+
+  return SD;
+})();
+
+/* ═══════════ 首屏：真实前向加噪驱动的去噪演示 ═══════════ */
+(function () {
+  SD.ready(function () {
+    var host = document.getElementById('sd-hero-canvas');
+    var read = document.getElementById('sd-hero-read');
+    var meter = document.getElementById('sd-hero-meter');
+    var sl = document.getElementById('sd-hero-t');
+    var rd = document.getElementById('sd-hero-trd');
+    var play = document.getElementById('sd-hero-play');
+    if (!host || !read || !sl) return;
+
+    var S = SD.SCENE, DISP = 288;                /* 96×96 实算，CSS 放大到 288 显示 */
+    var scene = SD.scene(S);
+    var eps = SD.noiseField(S * S * 3, 20260910); /* 固定一份噪声，拖动 t 才是同一条轨迹 */
+    var cv = SD.canvas(host, S, S, { raw: true, cssW: DISP, cssH: DISP, cls: 'px', label: '扩散演示：同一张图在不同噪声水平下的样子' });
+
+    function bar(label, v, color, txt) {
+      var row = SD.el('div', 'row');
+      row.appendChild(SD.el('span', null, label));
+      var tr = SD.el('div', 'tr'), fi = SD.el('div', 'fi');
+      fi.style.width = (SD.clamp(v, 0, 1) * 100) + '%';
+      fi.style.background = color;
+      tr.appendChild(fi); row.appendChild(tr);
+      row.appendChild(SD.el('span', null, txt));
+      return row;
+    }
+
+    function render(t) {
+      var r = SD.diffuse(cv.ctx, scene.data, eps, t, S, 1);
+      rd.textContent = 't = ' + t;
+      var pct = Math.round(r.sqrtOne * 100);
+      read.innerHTML = '<span class="big">' + pct + '%</span>' +
+        '此刻画面里有 <b>' + pct + '%</b> 是噪声。' +
+        /* 按真实噪声占比判，不按 t：不同 schedule 下同一个 t 的噪声量差很多 */
+        (pct >= 85 ? '几乎什么都看不出来——生成就是从这里起步的。'
+         : pct >= 55 ? '大块的明暗关系开始浮出来，细节还完全埋着。'
+         : pct >= 20 ? '构图已经定了，剩下的步骤在收拾细节。'
+         : '基本就是最终图了。') +
+        '<span class="dim">x<sub>t</sub> = √ᾱ<sub>t</sub> · x<sub>0</sub> + √(1−ᾱ<sub>t</sub>) · ε　　ᾱ<sub>t</sub> = ' + (r.abar < 1e-3 ? r.abar.toExponential(2) : SD.fmt(r.abar, 4)) + '</span>';
+      meter.innerHTML = '';
+      meter.appendChild(bar('原图占比', r.sqrtAbar, 'var(--t-image)', SD.fmt(r.sqrtAbar, 2)));
+      meter.appendChild(bar('噪声占比', r.sqrtOne, 'var(--t-latent)', SD.fmt(r.sqrtOne, 2)));
+      cv.setLabel('扩散演示：t = ' + t + ' 时画面中约 ' + pct + '% 为噪声');
+    }
+
+    sl.addEventListener('input', function () { stop(); render(+sl.value); });
+
+    var timer = null;
+    function stop() { if (timer) { clearInterval(timer); timer = null; play.textContent = '▶ 播放去噪'; } }
+    play.addEventListener('click', function () {
+      if (timer) { stop(); return; }
+      if (SD.reduced()) { sl.value = 0; render(0); return; }   /* 尊重减少动效 */
+      var t = 999;
+      play.textContent = '■ 停止';
+      timer = setInterval(function () {
+        t -= 24;
+        if (t <= 0) { t = 0; sl.value = 0; render(0); stop(); return; }
+        sl.value = t; render(t);
+      }, 60);
+    });
+
+    render(999);
+  });
+})();
+
+/* ═══════════════════════════════════════════════════════════
+   以下由各章节片段注入（每段自带 IIFE）
+   ═══════════════════════════════════════════════════════════ */
+
+/* ==== 10-open.js ==== */
+(function () {
+  "use strict";
+
+  /* ── 01 · 起点：workflow 极简全景图 ── */
+  SD.ready(function () {
+    var root = document.getElementById('question');
+    if (!root) return;
+    var host = SD.$('#sd-a-graph', root);
+    var info = SD.$('#sd-a-nodeinfo', root);
+    if (!host || !info) return;
+
+    var nodes = [
+      { id: 'ckpt',     title: 'Load Checkpoint',    sub: '→ MODEL·CLIP·VAE',        x: 0,   y: 108, w: 150, h: 60 },
+      { id: 'clipPos',  title: 'CLIP Text Encode',   sub: 'CLIP → COND（正）',        x: 214, y: 8,   w: 194, h: 56 },
+      { id: 'clipNeg',  title: 'CLIP Text Encode',   sub: 'CLIP → COND（负）',        x: 214, y: 168, w: 194, h: 56 },
+      { id: 'latent',   title: 'Empty Latent Image', sub: '→ LATENT（全零画布）',       x: 214, y: 328, w: 194, h: 54 },
+      { id: 'ksampler', title: 'KSampler',           sub: 'MODEL+2×COND+LATENT→LATENT', x: 468, y: 148, w: 204, h: 80 },
+      { id: 'vae',      title: 'VAE Decode',         sub: 'LATENT+VAE→IMAGE',        x: 732, y: 158, w: 172, h: 56 },
+      { id: 'save',     title: 'Save Image',         sub: 'IMAGE → 文件',            x: 964, y: 170, w: 142, h: 48 }
+    ];
+    var links = [
+      { from: 'ckpt', to: 'clipPos', type: 'clip' },
+      { from: 'ckpt', to: 'clipNeg', type: 'clip' },
+      { from: 'ckpt', to: 'ksampler', type: 'model' },
+      { from: 'ckpt', to: 'vae', type: 'vae' },
+      { from: 'clipPos', to: 'ksampler', type: 'cond' },
+      { from: 'clipNeg', to: 'ksampler', type: 'cond' },
+      { from: 'latent', to: 'ksampler', type: 'latent' },
+      { from: 'ksampler', to: 'vae', type: 'latent' },
+      { from: 'vae', to: 'save', type: 'image' }
+    ];
+
+    var roleText = {
+      ckpt: 'Load Checkpoint 从模型文件里一次性取出三样东西：负责画图的网络权重 <span class="t-model">MODEL</span>、把文字变成向量的 <span class="t-clip">CLIP</span>、把潜空间图像换回像素图的 <span class="t-vae">VAE</span>。—— 第 06 节展开。',
+      clipPos: 'CLIP Text Encode（正）把你想要的提示词编码成模型能读的语义向量（<span class="t-cond">CONDITIONING</span>）。—— 第 07 节展开。',
+      clipNeg: 'CLIP Text Encode（负）把你不想要的东西也编码成另一路 <span class="t-cond">CONDITIONING</span>，供 KSampler 在每一步里做对比。—— 第 08 节展开。',
+      latent: 'Empty Latent Image 开一块潜空间画布，尺寸和批次数在这里定；它本身不产生任何随机性——开出来的是一块全零画布；真正的起点噪声由 KSampler 按 seed 生成。—— 第 09 节展开。',
+      ksampler: 'KSampler 是整条流水线的引擎：拿着 <span class="t-model">MODEL</span>、两路 <span class="t-cond">CONDITIONING</span> 和这块 <span class="t-latent">LATENT</span>，反复调用网络，把噪声一点点减掉。—— 第 10、11 节展开。',
+      vae: 'VAE Decode 把去噪完的 <span class="t-latent">LATENT</span> 从潜空间转换回看得懂的像素 <span class="t-image">IMAGE</span>。—— 第 12 节展开。',
+      save: 'Save Image 把 <span class="t-image">IMAGE</span> 写成文件——它没有会影响画面的参数，本文不单独为它开一节。'
+    };
+
+    SD.graph(host, nodes, links, {
+      title: 'ComfyUI workflow 极简全景图：Load Checkpoint、两个 CLIP Text Encode、Empty Latent Image、KSampler、VAE Decode、Save Image 依次相连',
+      onPick: function (id) {
+        info.innerHTML = '<span class="sd-lb">节点职责</span>' + (roleText[id] || '');
+      }
+    });
+  });
+
+  /* ── 02 · 取舍：一步 vs 多步 ── */
+  SD.ready(function () {
+    var root = document.getElementById('why-steps');
+    if (!root) return;
+    var card = SD.$('.sd-card', root);
+    var oneHost = SD.$('#sd-a-onestep-host', root);
+    var oneRange = SD.$('#sd-a-onestep-range', root);
+    var oneRd = SD.$('#sd-a-onestep-rd', root);
+    var oneRead = SD.$('#sd-a-onestep-read', root);
+    var multiHost = SD.$('#sd-a-multistep', root);
+    if (!card || !oneHost || !oneRange || !multiHost) return;
+
+    SD.onVisible(card, function () {
+      var S = SD.SCENE;
+      var scene = SD.scene(S);
+      var eps = SD.noiseField(S * S * 3, 20260902);
+      var cv = SD.canvas(oneHost, S, S, {
+        raw: true, cssW: 208, cssH: 208, cls: 'px',
+        label: '一次性跳跃演示：滑杆调完成度，画面从纯噪声直接跳向目标图'
+      });
+
+      function renderOne(p) {
+        var img = cv.ctx.createImageData(S, S);
+        var D = img.data;
+        for (var i = 0, si = 0; i < S * S; i++, si += 3) {
+          var r = SD.clamp((SD.lerp(eps[si], scene.data[si], p)) * 127.5 + 127.5, 0, 255);
+          var g = SD.clamp((SD.lerp(eps[si + 1], scene.data[si + 1], p)) * 127.5 + 127.5, 0, 255);
+          var b = SD.clamp((SD.lerp(eps[si + 2], scene.data[si + 2], p)) * 127.5 + 127.5, 0, 255);
+          var di = i * 4;
+          D[di] = r; D[di + 1] = g; D[di + 2] = b; D[di + 3] = 255;
+        }
+        cv.ctx.putImageData(img, 0, 0);
+        var pct = Math.round(p * 100);
+        oneRd.textContent = pct + '%';
+        cv.setLabel('一次性跳跃演示：完成度 ' + pct + '%');
+        if (oneRead) {
+          oneRead.textContent = pct < 40
+            ? '完成度 ' + pct + '%：基本还是随机噪声，看不出任何形状——网络在这一步没有任何"半对"的中间反馈可用。'
+            : pct < 75
+              ? '完成度 ' + pct + '%：能猜到大致明暗，但细节全是错的——这只是线性插值的示意，真实网络给不出这种"半成品"。'
+              : '完成度 ' + pct + '%：接近答案了；但这是拿正确答案反推出来的插值，网络自己一次到位做不到这一步。';
+        }
+      }
+
+      oneRange.addEventListener('input', function () { renderOne((+oneRange.value) / 100); });
+      renderOne(0);
+
+      /* 拆成很多小步：同一目标图、同一份噪声，按 schedule 在 6 个 t 上取样 */
+      var S2 = 64;
+      var scene2 = SD.scene(S2);
+      var eps2 = SD.noiseField(S2 * S2 * 3, 20260903);
+      var ts = [900, 700, 520, 340, 170, 0];
+      multiHost.innerHTML = '';
+      ts.forEach(function (t) {
+        var shot = SD.el('div', 'sd-shot');
+        var mc = SD.canvas(shot, S2, S2, {
+          raw: true, cssW: 96, cssH: 96, cls: 'px',
+          label: 't = ' + t + ' 时的中间态'
+        });
+        var r = SD.diffuse(mc.ctx, scene2.data, eps2, t, S2, 1);
+        var pct = Math.round(r.sqrtOne * 100);
+        mc.setLabel('t = ' + t + '，约 ' + pct + '% 为噪声');
+        shot.appendChild(SD.el('span', 'lb', 't=' + t + ' · ' + pct + '%'));
+        multiHost.appendChild(shot);
+      });
+    });
+  });
+})();
+
+/* ==== 20-core.js ==== */
+(function () {
+  "use strict";
+
+  /* ============================================================
+     03 · 第一因 —— 「同一个 t，两种 schedule」对照台
+     ============================================================ */
+
+  function statBlock(name, cls, r) {
+    var d = SD.el('div', 'sd-b-mk ' + cls);
+    var abarTxt = r.abar < 1e-3 ? r.abar.toExponential(2) : SD.fmt(r.abar, 4);
+    d.innerHTML = '<b>' + name + '</b>　ᾱ<sub>t</sub> = <span class="sd-b-val">' + abarTxt + '</span>' +
+      '<span class="sd-b-sub"> 噪声占比 ' + SD.fmt(r.sqrtOne * 100, 1) + '%</span>';
+    return d;
+  }
+
+  /* ᾱ_t 随 t 变化的折线图：线性 vs 余弦，共用坐标系，带当前 t 的竖线标记 */
+  function buildAbarChart(host) {
+    var NS = 'http://www.w3.org/2000/svg';
+    var W = 640, H = 168, padL = 34, padR = 12, padT = 10, padB = 22;
+    var iw = W - padL - padR, ih = H - padT - padB;
+    function X(t) { return padL + (t / (SD.T - 1)) * iw; }
+    function Y(a) { return padT + (1 - a) * ih; }
+    function pathOf(abar) {
+      var d = '', t;
+      for (t = 0; t < SD.T; t += 4) {
+        var x = X(t), y = Y(abar[t]);
+        d += (t === 0 ? 'M ' : 'L ') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+      }
+      return d;
+    }
+
+    var wrap = SD.el('div', 'sd-b-chart-wrap');
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'sd-svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'ᾱ_t 随 t 变化的曲线：线性表随 t 增大更快跌到 0，余弦表在 t 较大时仍保留一部分信号');
+
+    [0, 0.5, 1].forEach(function (v) {
+      var ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('class', 'sd-b-axis');
+      ln.setAttribute('x1', padL); ln.setAttribute('x2', W - padR);
+      ln.setAttribute('y1', Y(v)); ln.setAttribute('y2', Y(v));
+      svg.appendChild(ln);
+      var tx = document.createElementNS(NS, 'text');
+      tx.setAttribute('class', 'm sd-b-axis-tx');
+      tx.setAttribute('x', 4); tx.setAttribute('y', Y(v) + 3); tx.setAttribute('font-size', '9.5');
+      tx.textContent = v.toFixed(1);
+      svg.appendChild(tx);
+    });
+    [0, 500, 999].forEach(function (t) {
+      var tx = document.createElementNS(NS, 'text');
+      tx.setAttribute('class', 'm sd-b-axis-tx');
+      tx.setAttribute('x', X(t)); tx.setAttribute('y', H - 5); tx.setAttribute('font-size', '9.5');
+      tx.setAttribute('text-anchor', t === 0 ? 'start' : (t === 999 ? 'end' : 'middle'));
+      tx.textContent = 't=' + t;
+      svg.appendChild(tx);
+    });
+
+    function curve(abar, color, dash, label) {
+      var p = document.createElementNS(NS, 'path');
+      p.setAttribute('d', pathOf(abar));
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', color);
+      p.setAttribute('stroke-width', '2');
+      if (dash) p.setAttribute('stroke-dasharray', dash);
+      svg.appendChild(p);
+      var tx = document.createElementNS(NS, 'text');
+      /* 两条曲线在 t=999 都收敛到 0，端点标签会叠在一起。
+         改成贴在各自曲线 t≈620 处——那里两条线分得最开。 */
+      var anchorT = 620;
+      tx.setAttribute('x', X(anchorT)); tx.setAttribute('y', Y(abar[anchorT]) - 6);
+      tx.setAttribute('text-anchor', 'middle'); tx.setAttribute('font-size', '10.5');
+      /* 用内联 style 而非 fill 属性：共享样式里 svg.sd-svg text{fill:var(--ink2)}
+         是真正的作者样式，优先级高于呈现属性，attribute 会被它盖掉 */
+      tx.style.fill = color;
+      tx.textContent = label;
+      svg.appendChild(tx);
+    }
+    curve(SD.schedules.linear.abar, SD.typeColor('image'), '5 4', '线性');
+    curve(SD.schedules.cosine.abar, SD.typeColor('latent'), null, '余弦');
+
+    var mark = document.createElementNS(NS, 'line');
+    mark.setAttribute('class', 'sd-b-mkline');
+    mark.setAttribute('y1', padT); mark.setAttribute('y2', H - padB);
+    svg.appendChild(mark);
+
+    wrap.appendChild(svg);
+    host.appendChild(wrap);
+    return { setT: function (t) { var x = X(t); mark.setAttribute('x1', x); mark.setAttribute('x2', x); } };
+  }
+
+  function initDenoiseCompare(root) {
+    var S = SD.SCENE;
+    var scene = SD.scene(S);
+    var eps = SD.noiseField(S * S * 3, 20260304); /* 固定噪声，两侧共用同一条轨迹 */
+
+    var hostL = document.getElementById('sd-b-cv-linear');
+    var hostC = document.getElementById('sd-b-cv-cosine');
+    if (!hostL || !hostC) return;
+    var cvL = SD.canvas(hostL, S, S, { raw: true, cssW: 200, cssH: 200, cls: 'px', label: '线性 schedule 下的加噪画面' });
+    var cvC = SD.canvas(hostC, S, S, { raw: true, cssW: 200, cssH: 200, cls: 'px', label: '余弦 schedule 下的加噪画面' });
+
+    var sl = document.getElementById('sd-b-t');
+    var rd = document.getElementById('sd-b-trd');
+    var stats = document.getElementById('sd-b-stats');
+    var chartHost = document.getElementById('sd-b-chart');
+    if (!sl || !rd || !stats || !chartHost) return;
+    var chart = buildAbarChart(chartHost);
+
+    function render(t) {
+      var rl = SD.diffuse(cvL.ctx, scene.data, eps, t, S, 1, SD.schedules.linear);
+      var rc = SD.diffuse(cvC.ctx, scene.data, eps, t, S, 1, SD.schedules.cosine);
+      rd.textContent = 't = ' + t;
+      cvL.setLabel('线性 schedule，t=' + t + '，噪声占比约 ' + Math.round(rl.sqrtOne * 100) + '%');
+      cvC.setLabel('余弦 schedule，t=' + t + '，噪声占比约 ' + Math.round(rc.sqrtOne * 100) + '%');
+      stats.innerHTML = '';
+      stats.appendChild(statBlock('线性', 'sd-b-linear', rl));
+      stats.appendChild(statBlock('余弦', 'sd-b-cosine', rc));
+      chart.setT(t);
+    }
+
+    sl.addEventListener('input', function () { render(+sl.value); });
+    render(+sl.value);
+  }
+
+  /* ============================================================
+     04 · 潜空间 —— 压缩率计算器 + 尺度示意
+     ============================================================ */
+
+  function parsePosInt(s) {
+    if (!/^[0-9]+$/.test(s)) return NaN;
+    var n = parseInt(s, 10);
+    return n > 0 ? n : NaN;
+  }
+  function thousands(n) {
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  function initLatentCalc(root) {
+    var wEl = document.getElementById('sd-b-w');
+    var hEl = document.getElementById('sd-b-h');
+    var fEl = document.getElementById('sd-b-f');
+    var cEl = document.getElementById('sd-b-c');
+    var errEl = document.getElementById('sd-b-err');
+    var outEl = document.getElementById('sd-b-out');
+    var noteEl = document.getElementById('sd-b-note');
+    if (!wEl || !hEl || !fEl || !cEl || !errEl || !outEl || !noteEl) return;
+
+    function compute() {
+      var w = parsePosInt(wEl.value.trim());
+      var h = parsePosInt(hEl.value.trim());
+      var f = parseInt(fEl.value, 10);
+      var c = parseInt(cEl.value, 10);
+      var errs = [];
+      if (isNaN(w)) errs.push('宽度必须是正整数');
+      if (isNaN(h)) errs.push('高度必须是正整数');
+      if (!isNaN(w) && w % f !== 0) errs.push('宽度必须能被 ' + f + ' 整除');
+      if (!isNaN(h) && h % f !== 0) errs.push('高度必须能被 ' + f + ' 整除');
+      if (errs.length) {
+        errEl.textContent = errs.join('；');
+        outEl.innerHTML = '';
+        noteEl.textContent = '';
+        return;
+      }
+      errEl.textContent = '';
+      var pixelN = w * h * 3;
+      var lw = w / f, lh = h / f;
+      var latentN = lw * lh * c;
+      var ratio = pixelN / latentN;
+      outEl.innerHTML =
+        '<tr><td>像素空间 ' + w + '×' + h + '×3</td><td class="sd-b-num">' + thousands(pixelN) + '</td><td class="c sd-b-num">1×</td></tr>' +
+        '<tr class="sd-b-row-latent"><td>潜空间 ' + lw + '×' + lh + '×' + c + '</td><td class="sd-b-num">' + thousands(latentN) + '</td><td class="c sd-b-num">↓' + SD.fmt(ratio, 1) + '×</td></tr>';
+      noteEl.innerHTML = '把每一步要过一遍 U-Net 的数据量按元素个数算，从 <b>' + thousands(pixelN) + '</b> 降到 <b>' + thousands(latentN) + '</b>，是 <b>' + SD.fmt(ratio, 1) + ' 倍</b>的差距——这正是同一个 U-Net 能在几十步里反复跑、还能塞进消费级显卡的直接原因。';
+    }
+
+    wEl.addEventListener('input', compute);
+    hEl.addEventListener('input', compute);
+    fEl.addEventListener('change', compute);
+    cEl.addEventListener('change', compute);
+    compute();
+  }
+
+  function initLatentShots() {
+    var S = SD.SCENE;
+    var scene = SD.scene(S);
+    var hostFull = document.getElementById('sd-b-cv-full');
+    var hostDown = document.getElementById('sd-b-cv-down');
+    if (!hostFull || !hostDown) return;
+    var DISP = 192;
+
+    var cvFull = SD.canvas(hostFull, S, S, { raw: true, cssW: DISP, cssH: DISP, label: '96×96 原始示意图' });
+    var img = cvFull.ctx.createImageData(S, S);
+    var d = img.data, i, p;
+    for (i = 0, p = 0; i < S * S; i++) {
+      d[i * 4] = SD.clamp(scene.data[p] * 127.5 + 127.5, 0, 255);
+      d[i * 4 + 1] = SD.clamp(scene.data[p + 1] * 127.5 + 127.5, 0, 255);
+      d[i * 4 + 2] = SD.clamp(scene.data[p + 2] * 127.5 + 127.5, 0, 255);
+      d[i * 4 + 3] = 255;
+      p += 3;
+    }
+    cvFull.ctx.putImageData(img, 0, 0);
+
+    var K = 8, DS = S / K; /* 96 / 8 = 12，仅作尺度示意，非真实 latent */
+    var cvDown = SD.canvas(hostDown, DS, DS, { raw: true, cssW: DISP, cssH: DISP, cls: 'px', label: DS + '×' + DS + ' 下采样尺度示意，非真实 latent' });
+    var img2 = cvDown.ctx.createImageData(DS, DS);
+    var d2 = img2.data;
+    var bx, by, xx, yy;
+    for (by = 0; by < DS; by++) {
+      for (bx = 0; bx < DS; bx++) {
+        var sr = 0, sg = 0, sb = 0, cnt = 0;
+        for (yy = 0; yy < K; yy++) {
+          for (xx = 0; xx < K; xx++) {
+            var sx = bx * K + xx, sy = by * K + yy;
+            var si = (sy * S + sx) * 3;
+            sr += scene.data[si]; sg += scene.data[si + 1]; sb += scene.data[si + 2];
+            cnt++;
+          }
+        }
+        var di = (by * DS + bx) * 4;
+        d2[di] = SD.clamp((sr / cnt) * 127.5 + 127.5, 0, 255);
+        d2[di + 1] = SD.clamp((sg / cnt) * 127.5 + 127.5, 0, 255);
+        d2[di + 2] = SD.clamp((sb / cnt) * 127.5 + 127.5, 0, 255);
+        d2[di + 3] = 255;
+      }
+    }
+    cvDown.ctx.putImageData(img2, 0, 0);
+  }
+
+  /* ============================================================
+     入口
+     ============================================================ */
+  SD.ready(function () {
+    var denoiseRoot = document.getElementById('denoise');
+    if (denoiseRoot) {
+      var card = SD.$('.sd-b-compare', denoiseRoot);
+      if (card) SD.onVisible(card, function () { initDenoiseCompare(denoiseRoot); });
+    }
+    var latentRoot = document.getElementById('latent');
+    if (latentRoot) {
+      initLatentCalc(latentRoot);
+      var full = document.getElementById('sd-b-cv-full');
+      if (full) SD.onVisible(full, function () { initLatentShots(); });
+    }
+  });
+})();
+
+/* ==== 30-pipeline.js ==== */
+(function () {
+  var pipe = document.getElementById('pipeline');
+  var ckptSec = document.getElementById('checkpoint');
+  if (!pipe && !ckptSec) return;
+
+  /* 05 节：图上每个节点点开后展示的四件事 */
+  var PIPE_INFO = {
+    ckpt: {
+      title: 'Load Checkpoint', color: 'var(--t-model)',
+      inp: '无（从磁盘读取 checkpoint 文件）',
+      out: '<span class="t-model">MODEL</span> · <span class="t-clip">CLIP</span> · <span class="t-vae">VAE</span>',
+      role: '一次性把 U-Net、文本编码器、VAE 三套权重从 checkpoint 文件里拆出来，分发给下游三条不同的路。',
+      params: 'ckpt_name（选哪个模型文件 → 见第 06 节）'
+    },
+    clipPos: {
+      title: 'CLIP Text Encode（正）', color: 'var(--t-cond)',
+      inp: '<span class="t-clip">CLIP</span>',
+      out: '<span class="t-cond">CONDITIONING</span>',
+      role: '把正向提示词编码成 KSampler 能用的张量，告诉它「往哪走」。',
+      params: 'text（提示词内容 → 见第 07 节）'
+    },
+    clipNeg: {
+      title: 'CLIP Text Encode（负）', color: 'var(--t-cond)',
+      inp: '<span class="t-clip">CLIP</span>',
+      out: '<span class="t-cond">CONDITIONING</span>',
+      role: '把负向提示词编码成张量，告诉 KSampler「别往哪走」，配合 CFG 一起起作用。',
+      params: 'text（负向提示词 → 见第 08 节）'
+    },
+    latentEmpty: {
+      title: 'Empty Latent Image', color: 'var(--t-latent)',
+      inp: '无（由参数直接生成）',
+      out: '<span class="t-latent">LATENT</span>',
+      role: '准备一块指定尺寸的空白潜空间画布，作为 KSampler 的起点。',
+      params: 'width / height / batch_size；起点的随机种子见第 09 节'
+    },
+    ksampler: {
+      title: 'KSampler', color: 'var(--t-latent)',
+      inp: '<span class="t-model">MODEL</span> · <span class="t-cond">CONDITIONING</span> ×2 · <span class="t-latent">LATENT</span>',
+      out: '<span class="t-latent">LATENT</span>',
+      role: '全部去噪工作都在这里发生：反复调用 MODEL 预测噪声，按两路 CONDITIONING 加权修正，逐步改写 LATENT。是链上唯一「跑很多次」的节点。',
+      params: 'seed（见 09）· sampler_name / scheduler（见 10）· steps / denoise（见 11）· cfg（见 08）'
+    },
+    vaeDecode: {
+      title: 'VAE Decode', color: 'var(--t-image)',
+      inp: '<span class="t-latent">LATENT</span> · <span class="t-vae">VAE</span>',
+      out: '<span class="t-image">IMAGE</span>',
+      role: '把潜空间张量还原成像素图。',
+      params: '无独立参数；画质相关问题见第 12 节'
+    },
+    saveImage: {
+      title: 'Save Image', color: 'var(--t-image)',
+      inp: '<span class="t-image">IMAGE</span>',
+      out: '无（写入磁盘）',
+      role: '把最终像素图落盘。',
+      params: 'filename_prefix 等，不展开'
+    }
+  };
+
+  function renderInfo(id) {
+    var d = PIPE_INFO[id];
+    if (!d) return;
+    var pin = document.getElementById('sd-c-info1-pin');
+    var title = document.getElementById('sd-c-info1-title');
+    var body = document.getElementById('sd-c-info1-body');
+    if (!pin || !title || !body) return;
+    pin.style.background = d.color;
+    title.textContent = d.title;
+    body.innerHTML =
+      '<div class="sd-c-row"><span class="k">输入</span><span class="v">' + d.inp + '</span></div>' +
+      '<div class="sd-c-row"><span class="k">输出</span><span class="v">' + d.out + '</span></div>' +
+      '<div class="sd-c-row"><span class="k">职责</span><span class="v">' + d.role + '</span></div>' +
+      '<div class="sd-c-row"><span class="k">参数</span><span class="v">' + d.params + '</span></div>';
+  }
+
+  SD.ready(function () {
+    if (pipe) {
+      var host1 = SD.$('#sd-c-graph1', pipe);
+      if (host1) {
+        var nodes1 = [
+          { id: 'ckpt', title: 'Load Checkpoint', sub: 'MODEL · CLIP · VAE', x: 0, y: 110, w: 160, h: 140 },
+          { id: 'clipPos', title: 'CLIP Text Encode', sub: '正向提示词', x: 260, y: 10, w: 180, h: 58 },
+          { id: 'clipNeg', title: 'CLIP Text Encode', sub: '负向提示词', x: 260, y: 96, w: 180, h: 58 },
+          { id: 'latentEmpty', title: 'Empty Latent Image', sub: '宽 · 高 · batch', x: 260, y: 250, w: 180, h: 58 },
+          { id: 'ksampler', title: 'KSampler', sub: '唯一循环的节点', x: 530, y: 130, w: 190, h: 90 },
+          { id: 'vaeDecode', title: 'VAE Decode', sub: 'LATENT → IMAGE', x: 800, y: 150, w: 170, h: 58 },
+          { id: 'saveImage', title: 'Save Image', sub: '落盘', x: 1030, y: 162, w: 140, h: 50 }
+        ];
+        var links1 = [
+          { from: 'ckpt', to: 'clipPos', type: 'clip' },
+          { from: 'ckpt', to: 'clipNeg', type: 'clip' },
+          { from: 'ckpt', to: 'ksampler', type: 'model' },
+          { from: 'ckpt', to: 'vaeDecode', type: 'vae' },
+          { from: 'clipPos', to: 'ksampler', type: 'cond' },
+          { from: 'clipNeg', to: 'ksampler', type: 'cond' },
+          { from: 'latentEmpty', to: 'ksampler', type: 'latent' },
+          { from: 'ksampler', to: 'vaeDecode', type: 'latent' },
+          { from: 'vaeDecode', to: 'saveImage', type: 'image' }
+        ];
+        var g1 = SD.graph(host1, nodes1, links1, {
+          title: 'ComfyUI 默认文生图 workflow：Load Checkpoint 分出 MODEL、CLIP、VAE 三路；两路 CLIP Text Encode 生成正负 CONDITIONING；Empty Latent Image 提供起始画布；四路汇入 KSampler 反复去噪；结果经 VAE Decode 还原成 IMAGE，由 Save Image 落盘。',
+          onPick: function (id) { renderInfo(id); }
+        });
+        renderInfo('ckpt');
+        g1.select('ckpt');
+      }
+    }
+
+    if (ckptSec) {
+      var host2 = SD.$('#sd-c-graph2', ckptSec);
+      if (host2) {
+        var nodes2 = [
+          { id: 'ckpt2', title: 'Load Checkpoint', sub: '.safetensors', x: 0, y: 52, w: 170, h: 110 },
+          { id: 'toModel', title: 'KSampler', sub: 'MODEL → 见 10', x: 280, y: 0, w: 190, h: 54 },
+          { id: 'toClip', title: 'CLIP Text Encode ×2', sub: 'CLIP → 见 07', x: 280, y: 80, w: 190, h: 54 },
+          { id: 'toVae', title: 'VAE Decode', sub: 'VAE → 见 12', x: 280, y: 160, w: 190, h: 54 }
+        ];
+        var links2 = [
+          { from: 'ckpt2', to: 'toModel', type: 'model' },
+          { from: 'ckpt2', to: 'toClip', type: 'clip' },
+          { from: 'ckpt2', to: 'toVae', type: 'vae' }
+        ];
+        var cardMap = { toModel: 'sd-c-card-model', toClip: 'sd-c-card-clip', toVae: 'sd-c-card-vae' };
+        SD.graph(host2, nodes2, links2, {
+          title: 'Load Checkpoint 拆包：MODEL 交给 KSampler，CLIP 交给两个 CLIP Text Encode，VAE 交给 VAE Decode。',
+          onPick: function (id) {
+            SD.$$('.sd-c-hi', ckptSec).forEach(function (n) { n.classList.remove('sd-c-hi'); });
+            var cid = cardMap[id];
+            if (cid) {
+              var card = document.getElementById(cid);
+              if (card) card.classList.add('sd-c-hi');
+            }
+          }
+        });
+      }
+    }
+  });
+})();
+
+/* ==== 40-clip.js ==== */
+(function () {
+  'use strict';
+
+  /* ═══════════════════════════════════════════════════════════
+     07 · CLIP — 简化分词器 + 77 槽位演示
+     声明：这是为讲解写的简化分词，按空格/标点切词，超过 4 个字符
+     且不在小词表里的词按定长切成碎片；不是真实 CLIP 的 BPE 词表。
+     ═══════════════════════════════════════════════════════════ */
+  (function () {
+    var root = document.getElementById('clip');
+    if (!root) return;
+
+    var WHITELIST = {};
+    ('a an the of in on with and or to is are it its at this that ' +
+     'cute cat dog red sofa soft light lighting sitting standing ' +
+     'best quality high detail detailed photo style art digital ' +
+     'painting realistic cinematic dramatic shadow shadows color ' +
+     'colors vibrant pose fantasy landscape mountain mountains forest ' +
+     'temple ancient golden hour fog wide angle depth field film ' +
+     'grain render hyper award winning dynamic elegant futuristic ' +
+     'city skyline neon lights reflections rain character eyes hair ' +
+     'flowing armor ornate waterfall epic composition riding through ' +
+     'dusk night day').split(' ').forEach(function (w) { WHITELIST[w] = true; });
+
+    var FRAG = 4, MAXCONTENT = 75;
+
+    /* 长词按 4 字符定长拆碎片，非首块加 ## 前缀表示"续接" */
+    function splitWord(w) {
+      var lower = w.toLowerCase();
+      if (w.length <= FRAG || WHITELIST[lower]) return [w];
+      var parts = [], i = 0;
+      while (i < w.length) { var c = w.slice(i, i + FRAG); parts.push(i === 0 ? c : '##' + c); i += FRAG; }
+      return parts;
+    }
+
+    /* 解析 (word:1.3) 权重语法，其余按空格/标点切成 token；
+       返回 [{text, weight, frag}] */
+    function tokenize(raw) {
+      var tokens = [];
+      function pushPlain(str, weight) {
+        var wre = /[A-Za-z0-9']+|[^\sA-Za-z0-9']/g, wm;
+        while ((wm = wre.exec(str))) {
+          var t = wm[0];
+          if (/^[A-Za-z0-9']+$/.test(t)) {
+            var parts = splitWord(t);
+            for (var k = 0; k < parts.length; k++) tokens.push({ text: parts[k], weight: weight, frag: k > 0 });
+          } else {
+            tokens.push({ text: t, weight: weight, frag: false });
+          }
+        }
+      }
+      var re = /\(([^()]+):([0-9]*\.?[0-9]+)\)/g, last = 0, m;
+      while ((m = re.exec(raw))) {
+        pushPlain(raw.slice(last, m.index), 1);
+        pushPlain(m[1], parseFloat(m[2]));
+        last = re.lastIndex;
+      }
+      pushPlain(raw.slice(last), 1);
+      return tokens;
+    }
+
+    var input = SD.$('#sd-d-input', root);
+    var presetBtns = SD.$$('.sd-d-preset', root);
+    var slotsEl = SD.$('#sd-d-slots', root);
+    var overflowEl = SD.$('#sd-d-overflow', root);
+    var ovlistEl = SD.$('#sd-d-ovlist', root);
+    var countEl = SD.$('#sd-d-count', root);
+    var weightsEl = SD.$('#sd-d-weights', root);
+    var wnoteEl = SD.$('#sd-d-wnote', root);
+    if (!input || !slotsEl) return;
+
+    var PRESETS = [
+      'a cute cat sitting on a red sofa, soft lighting',
+      'masterpiece, best quality, ultra detailed, 8k uhd, cinematic lighting, dramatic shadows, ' +
+        'intricate details, sharp focus, vibrant colors, dynamic pose, elegant fantasy character, ' +
+        'futuristic city skyline, neon lights reflections, heavy rain, cyberpunk style portrait, ' +
+        'detailed eyes, flowing hair, ornate armor, epic fantasy landscape, tall mountains, waterfall, ' +
+        'deep forest, ancient stone temple, golden hour sunlight, volumetric fog, epic composition, ' +
+        'wide angle lens, shallow depth of field, 35mm film grain, trending on artstation, unreal engine ' +
+        'render, hyperrealistic, photorealistic, award winning photography, dramatic rim lighting, ' +
+        'glowing embers, floating particles, misty atmosphere, painterly brush strokes, intricate line work, ' +
+        'high contrast, saturated palette, studio lighting setup',
+      'a (chonkalicious:1.4) xylobeast riding a glorptron through zzyzxville at dusk'
+    ];
+
+    function shortLabel(text) {
+      var base = text.replace(/^##/, '');
+      return base.length > 5 ? base.slice(0, 4) + '…' : base;
+    }
+
+    function render(raw) {
+      var tokens = tokenize(raw);
+      var total = tokens.length;
+      var content = tokens.slice(0, MAXCONTENT);
+      var overflow = tokens.slice(MAXCONTENT);
+
+      slotsEl.innerHTML = '';
+      slotsEl.setAttribute('role', 'img');
+      slotsEl.setAttribute('aria-label',
+        '77 个槽位：第 0 与第 76 位是特殊标记，中间 75 位已用 ' + Math.min(total, MAXCONTENT) + ' 个内容 token');
+
+      var bos = SD.el('div', 'sd-d-cell bos', 'BOS');
+      bos.title = '起始标记 <|startoftext|>';
+      bos.setAttribute('aria-hidden', 'true');
+      slotsEl.appendChild(bos);
+
+      for (var i = 0; i < MAXCONTENT; i++) {
+        var cell;
+        if (i < content.length) {
+          var tok = content[i];
+          var cls = 'sd-d-cell content' + (tok.frag ? ' frag' : '') + (tok.weight !== 1 ? ' weighted' : '');
+          cell = SD.el('div', cls, shortLabel(tok.text));
+          cell.title = tok.text + '（权重 ' + SD.fmt(tok.weight, 2) + '）';
+        } else {
+          cell = SD.el('div', 'sd-d-cell empty', '·');
+          cell.title = '未使用的内容槽位';
+        }
+        cell.setAttribute('aria-hidden', 'true');
+        slotsEl.appendChild(cell);
+      }
+
+      var eos = SD.el('div', 'sd-d-cell eos', 'EOS');
+      eos.title = '结束标记 <|endoftext|>';
+      eos.setAttribute('aria-hidden', 'true');
+      slotsEl.appendChild(eos);
+
+      if (overflow.length) {
+        overflowEl.hidden = false;
+        ovlistEl.innerHTML = '';
+        var shown = overflow.slice(0, 24);
+        shown.forEach(function (tok) {
+          ovlistEl.appendChild(SD.el('span', 'sd-d-ovchip', tok.text.replace(/^##/, '')));
+        });
+        if (overflow.length > shown.length) {
+          ovlistEl.appendChild(SD.el('span', 'sd-d-ovchip', '+' + (overflow.length - shown.length) + ' 更多'));
+        }
+      } else {
+        overflowEl.hidden = true;
+        ovlistEl.innerHTML = '';
+      }
+
+      countEl.textContent = String(Math.min(total, MAXCONTENT));
+
+      weightsEl.innerHTML = '';
+      var weighted = [];
+      for (var wi = 0; wi < content.length; wi++) {
+        var tok = content[wi];
+        var h = SD.clamp(10 + Math.abs(tok.weight - 1) * 40 + (tok.weight === 1 ? 8 : 0), 4, 40);
+        var cls = 'sd-d-wbar' + (tok.weight > 1.05 ? ' hi' : tok.weight < 0.95 ? ' lo' : '');
+        var bar = SD.el('div', cls);
+        bar.style.height = h + 'px';
+        bar.title = tok.text + ' × ' + SD.fmt(tok.weight, 2);
+        weightsEl.appendChild(bar);
+        /* 权重来自括号语法，同一个词拆出的碎片权重必然相同——
+           合并回原词展示，避免把 chon/kali/ciou/s 当成四个不相干的词列出来 */
+        if (tok.weight !== 1 && !tok.frag) {
+          var full = tok.text, j = wi + 1;
+          while (j < content.length && content[j].frag) { full += content[j].text.replace(/^##/, ''); j++; }
+          weighted.push(full + ' → ×' + SD.fmt(tok.weight, 2));
+        }
+      }
+      wnoteEl.textContent = weighted.length
+        ? '检测到权重语法：' + weighted.join('，') + '（其余 token 权重均为默认 1.0）。'
+        : '当前提示词未使用 (word:weight) 权重语法，所有 token 权重均为默认 1.0。';
+    }
+
+    input.addEventListener('input', function () {
+      presetBtns.forEach(function (b) { b.classList.remove('on'); });
+      render(input.value);
+    });
+    presetBtns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = +b.getAttribute('data-i');
+        input.value = PRESETS[i];
+        presetBtns.forEach(function (x) { x.classList.toggle('on', x === b); });
+        render(input.value);
+      });
+    });
+
+    render(input.value);
+  })();
+
+  /* ═══════════════════════════════════════════════════════════
+     08 · CFG — 向量合成演示 + 画面级模拟
+     ε = ε_uncond + scale × (ε_cond − ε_uncond)
+     ═══════════════════════════════════════════════════════════ */
+  (function () {
+    var root = document.getElementById('cfg');
+    if (!root) return;
+
+    var svgHost = SD.$('#sd-d-cfgsvg', root);
+    var imgHost = SD.$('#sd-d-cfgimg', root);
+    var slider = SD.$('#sd-d-cfgscale', root);
+    var rd = SD.$('#sd-d-cfgrd', root);
+    var capEl = SD.$('#sd-d-cfgcap', root);
+    var warnEl = SD.$('#sd-d-cfgwarn', root);
+    if (!svgHost || !slider) return;
+
+    /* 固定的示意向量（插图用途，不代表任何真实模型的数值） */
+    /* 两个基向量的方向必须拉开，否则 Δ 短到看不见，「沿 Δ 外推」这件事就演示不出来。
+       画布放宽是为了 scale 拉到 20 时合成向量不出界。 */
+    var UNCOND = [1, 3], COND = [3, 2.4], RADIUS = 16;
+    var K = 6, OX = 100, OY = 200, VBW = 420, VBH = 330;
+    var magCond = Math.sqrt(COND[0] * COND[0] + COND[1] * COND[1]);
+
+    function toScreen(v) { return [OX + v[0] * K, OY - v[1] * K]; }
+
+    function buildSvg(comp) {
+      var pU = toScreen(UNCOND), pC = toScreen(COND), pComp = toScreen(comp);
+      var cU = SD.typeColor('image');   /* 中性方向色：uncond 基准 */
+      var cC = SD.typeColor('clip');    /* 与 CLIP 节点同色：ε_cond 来自条件编码 */
+      var cD = '#9A968E';               /* 差向量：中性提示色 */
+      var cComp = SD.typeColor('latent'); /* 合成结果最终改的是 LATENT，用同色呼应 */
+      var rPx = RADIUS * K;
+      return '' +
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + VBW + ' ' + VBH + '" role="img" aria-hidden="true">' +
+        '<defs>' +
+          '<marker id="sd-d-def-arrow-u" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="' + cU + '"/></marker>' +
+          '<marker id="sd-d-def-arrow-c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="' + cC + '"/></marker>' +
+          '<marker id="sd-d-def-arrow-comp" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="' + cComp + '"/></marker>' +
+        '</defs>' +
+        '<circle cx="' + OX + '" cy="' + OY + '" r="' + rPx + '" fill="rgba(154,150,142,.08)" stroke="#3B424E" stroke-width="1.4" stroke-dasharray="4 4"/>' +
+        '<text x="' + (OX - rPx + 8) + '" y="' + (OY - rPx + 16) + '">模型熟悉区域（示意）</text>' +
+        /* 三个向量的起点几乎重合，内联标签必然互相压字，改用左上角图例 */
+        '<g font-size="12">' +
+          '<line x1="14" y1="20" x2="40" y2="20" stroke="' + cU + '" stroke-width="2.4"/>' +
+          '<text x="46" y="24" fill="' + cU + '">ε_uncond　基准方向</text>' +
+          '<line x1="14" y1="40" x2="40" y2="40" stroke="' + cC + '" stroke-width="2.4"/>' +
+          '<text x="46" y="44" fill="' + cC + '">ε_cond　　条件方向</text>' +
+          '<line x1="14" y1="60" x2="40" y2="60" stroke="' + cD + '" stroke-width="1.6" stroke-dasharray="3 3"/>' +
+          '<text x="46" y="64" fill="' + cD + '">Δ = ε_cond − ε_uncond</text>' +
+        '</g>' +
+        '<circle cx="' + OX + '" cy="' + OY + '" r="3" fill="#C9C6C0"/>' +
+        '<line x1="' + OX + '" y1="' + OY + '" x2="' + pU[0] + '" y2="' + pU[1] + '" stroke="' + cU + '" stroke-width="2" marker-end="url(#sd-d-def-arrow-u)"/>' +
+                '<line x1="' + OX + '" y1="' + OY + '" x2="' + pC[0] + '" y2="' + pC[1] + '" stroke="' + cC + '" stroke-width="2" marker-end="url(#sd-d-def-arrow-c)"/>' +
+                '<line x1="' + pU[0] + '" y1="' + pU[1] + '" x2="' + pC[0] + '" y2="' + pC[1] + '" stroke="' + cD + '" stroke-width="1.4" stroke-dasharray="3 3"/>' +
+                '<line x1="' + OX + '" y1="' + OY + '" x2="' + pComp[0] + '" y2="' + pComp[1] + '" stroke="' + cComp + '" stroke-width="2.6" marker-end="url(#sd-d-def-arrow-comp)"/>' +
+        '<text x="' + (pComp[0] + 6) + '" y="' + (pComp[1] + 4) + '" fill="' + cComp + '" font-weight="700">ε（合成）</text>' +
+        '</svg>';
+    }
+
+    function updateVector(scale) {
+      var comp = [UNCOND[0] + scale * (COND[0] - UNCOND[0]), UNCOND[1] + scale * (COND[1] - UNCOND[1])];
+      var m = Math.sqrt(comp[0] * comp[0] + comp[1] * comp[1]);
+      svgHost.innerHTML = buildSvg(comp);
+      rd.textContent = SD.fmt(scale, 1);
+      if (capEl) {
+        capEl.textContent = 'scale = ' + SD.fmt(scale, 1) + ' 时，合成向量模长 |ε| ≈ ' + SD.fmt(m, 2) +
+          '；ε_cond 自身模长 ≈ ' + SD.fmt(magCond, 2) + '。起点是 ε_uncond，移动的方向由 ε_cond − ε_uncond 决定，scale 只改变沿这个方向走多远。';
+      }
+      if (warnEl) {
+        warnEl.textContent = m > RADIUS
+          ? '已经走出模型熟悉的范围，这就是过饱和/焦掉的来源。'
+          : '仍在模型熟悉的范围内。';
+      }
+    }
+
+    /* 画面级对照：对同一张示意图做对比度/饱和度变换，模拟不同 CFG 的视觉倾向。
+       声明：这是像素后处理模拟，不是真的跑了不同 CFG 的采样。 */
+    var S = SD.SCENE, DISP = 168;
+    var scene = SD.scene(S);
+    var noise = SD.noiseField(S * S * 3, 78341);
+    var cv = SD.canvas(imgHost, S, S, {
+      raw: true, cssW: DISP, cssH: DISP, cls: 'px',
+      label: 'CFG 画面倾向模拟：对比度/饱和度随 scale 变化'
+    });
+
+    function updateImg(scale) {
+      var ratio = scale / 7;
+      var contrast = SD.clamp(1 + 0.55 * (ratio - 1), 0.4, 2.2);
+      var sat = SD.clamp(1 + 0.6 * (ratio - 1), 0.35, 2.2);
+      var noiseMix = SD.clamp((scale - 12) / 8, 0, 1) * 0.14;
+      var img = cv.ctx.createImageData(S, S);
+      var D = img.data, d0 = scene.data;
+      for (var i = 0, p = 0; i < S * S; i++, p += 3) {
+        var r = d0[p] * 127.5 + 127.5, g = d0[p + 1] * 127.5 + 127.5, b = d0[p + 2] * 127.5 + 127.5;
+        var gray = (r + g + b) / 3;
+        r = gray + (r - gray) * sat; g = gray + (g - gray) * sat; b = gray + (b - gray) * sat;
+        r = (r - 127.5) * contrast + 127.5; g = (g - 127.5) * contrast + 127.5; b = (b - 127.5) * contrast + 127.5;
+        if (noiseMix > 0) { r += noise[p] * 40 * noiseMix; g += noise[p + 1] * 40 * noiseMix; b += noise[p + 2] * 40 * noiseMix; }
+        var di = i * 4;
+        D[di] = SD.clamp(r, 0, 255); D[di + 1] = SD.clamp(g, 0, 255); D[di + 2] = SD.clamp(b, 0, 255); D[di + 3] = 255;
+      }
+      cv.ctx.putImageData(img, 0, 0);
+      cv.setLabel('CFG 画面倾向模拟：scale = ' + SD.fmt(scale, 1) +
+        '，对比度 ×' + SD.fmt(contrast, 2) + '，饱和度 ×' + SD.fmt(sat, 2));
+    }
+
+    slider.addEventListener('input', function () {
+      var s = +slider.value;
+      updateVector(s);
+      updateImg(s);
+    });
+
+    updateVector(+slider.value);
+    updateImg(+slider.value);
+  })();
+})();
+
+/* ==== 50-seed.js ==== */
+(function () {
+  'use strict';
+
+  /* 把一段噪声数组（每像素 3 通道）画成彩色静态噪点：三通道各自独立随机，
+     视觉上就是常见的"雪花噪声"，直接体现"seed 决定每一个数值"这件事 */
+  function paintNoise(ctx, eps, S) {
+    var img = ctx.createImageData(S, S);
+    var D = img.data, p = 0, i, di, r, g, b;
+    for (i = 0; i < S * S; i++) {
+      r = SD.clamp(127.5 + eps[p] * 46, 0, 255);
+      g = SD.clamp(127.5 + eps[p + 1] * 46, 0, 255);
+      b = SD.clamp(127.5 + eps[p + 2] * 46, 0, 255);
+      p += 3;
+      di = i * 4;
+      D[di] = r; D[di + 1] = g; D[di + 2] = b; D[di + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     09 · Empty Latent Image 与 seed
+     ═══════════════════════════════════════════════════════════ */
+
+  function initShapeCalc(root) {
+    var wEl = SD.$('#sd-e-w', root), hEl = SD.$('#sd-e-h', root);
+    var out = SD.$('#sd-e-shape-out', root), err = SD.$('#sd-e-shape-err', root);
+    if (!wEl || !hEl || !out || !err) return;
+
+    function render() {
+      var w = parseInt(wEl.value, 10), h = parseInt(hEl.value, 10);
+      var bad = [];
+      if (!isFinite(w) || w <= 0) bad.push('width 需为正整数');
+      else if (w % 8 !== 0) bad.push('width = ' + w + ' 不是 8 的倍数');
+      if (!isFinite(h) || h <= 0) bad.push('height 需为正整数');
+      else if (h % 8 !== 0) bad.push('height = ' + h + ' 不是 8 的倍数');
+      if (bad.length) {
+        err.hidden = false;
+        err.innerHTML = '<span class="sd-lb">尺寸不合法</span>' + bad.join('；') +
+          '。Empty Latent Image 不会替你静默取整，请把宽高都改成 8 的倍数。';
+        out.hidden = true;
+        return;
+      }
+      err.hidden = true;
+      out.hidden = false;
+      var lw = w / 8, lh = h / 8, n = 4 * lw * lh;
+      out.innerHTML = 'LATENT 形状 <b>[1, 4, ' + lh + ', ' + lw + ']</b>　元素个数 <b>' + n + '</b>（约 ' + SD.human(n) + '）';
+    }
+    wEl.addEventListener('input', render);
+    hEl.addEventListener('input', render);
+    render();
+  }
+
+  function initNoiseDemo(root) {
+    var seedEl = SD.$('#sd-e-seed', root), randBtn = SD.$('#sd-e-rand', root);
+    var singleHost = SD.$('#sd-e-single', root);
+    var multiHost = SD.$('#sd-e-multi', root);
+    var twiceHost = SD.$('#sd-e-twice', root);
+    var twiceNote = SD.$('#sd-e-twice-note', root);
+    if (!seedEl || !singleHost) return;
+
+    var S1 = 56, D1 = 168;
+    var single = SD.canvas(singleHost, S1, S1, { raw: true, cssW: D1, cssH: D1, cls: 'px', label: '当前 seed 生成的初始噪声' });
+
+    function paintSingle() {
+      var seed = parseInt(seedEl.value, 10) || 0;
+      paintNoise(single.ctx, SD.noiseField(S1 * S1 * 3, seed), S1);
+      single.setLabel('seed = ' + seed + ' 生成的初始噪声');
+    }
+
+    function paintTwice() {
+      if (!twiceHost) return;
+      var seed = parseInt(seedEl.value, 10) || 0;
+      twiceHost.innerHTML = '';
+      var S = 44, D = 116;
+      var a = SD.noiseField(S * S * 3, seed);
+      var b = SD.noiseField(S * S * 3, seed);
+      [a, b].forEach(function (arr, i) {
+        var shot = SD.el('div', 'sd-shot');
+        var cv = SD.canvas(shot, S, S, { raw: true, cssW: D, cssH: D, cls: 'px', label: '第 ' + (i + 1) + ' 次生成，seed = ' + seed });
+        paintNoise(cv.ctx, arr, S);
+        shot.appendChild(SD.el('span', 'lb', '第 ' + (i + 1) + ' 次'));
+        twiceHost.appendChild(shot);
+      });
+      var diff = 0, i2;
+      for (i2 = 0; i2 < a.length; i2++) if (a[i2] !== b[i2]) diff++;
+      if (twiceNote) {
+        twiceNote.textContent = diff === 0
+          ? '逐像素比对（共 ' + a.length + ' 个数值）：两次结果完全一致，0 处不同——这就是"同 seed 同参数 = 同图"的由来。'
+          : '比对发现 ' + diff + ' 处不同（异常，说明随机数发生器没有被正确固定）。';
+      }
+    }
+
+    function paintMulti() {
+      if (!multiHost) return;
+      multiHost.innerHTML = '';
+      var S = 40, D = 104;
+      [11, 20260910, 837412, 55511].forEach(function (seed) {
+        var shot = SD.el('div', 'sd-shot');
+        var cv = SD.canvas(shot, S, S, { raw: true, cssW: D, cssH: D, cls: 'px', label: 'seed = ' + seed + ' 的初始噪声' });
+        paintNoise(cv.ctx, SD.noiseField(S * S * 3, seed), S);
+        shot.appendChild(SD.el('span', 'lb', 'seed = ' + seed));
+        multiHost.appendChild(shot);
+      });
+    }
+
+    /* 「随机换一个」不用 Math.random：用一个递增计数器派生 seed，
+       计数器本身就是可复现的（每次点击 +1），只是用它去驱动 SD.rng 取一个数 */
+    var clicks = 0;
+    if (randBtn) {
+      randBtn.addEventListener('click', function () {
+        clicks += 1;
+        var r = SD.rng(clicks * 104729 + 17)();
+        var seed = Math.floor(r * 1e9);
+        seedEl.value = String(seed);
+        paintSingle(); paintTwice();
+      });
+    }
+    seedEl.addEventListener('input', function () { paintSingle(); paintTwice(); });
+
+    paintSingle(); paintTwice(); paintMulti();
+  }
+
+  SD.ready(function () {
+    var root = document.getElementById('seed');
+    if (!root) return;
+    initShapeCalc(root);
+    SD.onVisible(root, function () { initNoiseDemo(root); });
+  });
+
+  /* ═══════════════════════════════════════════════════════════
+     10 · KSampler：sigma 表与采样器
+     ═══════════════════════════════════════════════════════════ */
+
+  /* 噪声水平 σ = √(1−ᾱ)/√ᾱ（与信噪比成反比），ᾱ 做了极小值保护避免除零 */
+  function sigmaAt(sched, t) {
+    /* ᾱ 夹到 (0,1) 开区间内，避免 t=0 处 ᾱ=1 导致 σ=0 → log(0) = -Infinity */
+    /* 余弦表在 t=T 时 ᾱ 精确为 0，σ 在数学上发散。这里返回 NaN 交给调用方跳过，
+       而不是夹一个数值——夹到 1e-8 会让曲线端点显示成 σ≈10000 这种凭空造出来的量级。 */
+    var raw = sched.abar[SD.clamp(t | 0, 0, SD.T - 1)];
+    if (!(raw > 1e-6) || raw >= 1) return NaN;
+    var ab = raw;
+    return Math.sqrt(1 - ab) / Math.sqrt(ab);
+  }
+  /* 把 N 步线性铺在 t = 999 → 0 上，取每一步对应的 t 索引 */
+  function stepTs(n) {
+    var ts = [], i, f;
+    for (i = 0; i < n; i++) {
+      f = n > 1 ? i / (n - 1) : 0;
+      ts.push(Math.round((SD.T - 1) * (1 - f)));
+    }
+    return ts;
+  }
+
+  function drawSigmaChart(root, n) {
+    var host = SD.$('#sd-e-sigwrap', root), cap = SD.$('#sd-e-sigcap', root);
+    if (!host) return;
+    var W = 640, H = 220, padL = 40, padR = 12, padT = 12, padB = 24;
+    var ts = stepTs(n);
+    var linSig = ts.map(function (t) { return sigmaAt(SD.schedules.linear, t); });
+    var cosSig = ts.map(function (t) { return sigmaAt(SD.schedules.cosine, t); });
+    /* σ 在退化端点是 NaN（余弦表 t=T 时 ᾱ=0，σ 数学上发散）。
+       对数范围只在有限正值上统计，否则一个 NaN/−Infinity 会污染全部坐标。 */
+    var logs = linSig.concat(cosSig)
+      .filter(function (v) { return isFinite(v) && v > 0; })
+      .map(Math.log);
+    var lo = Math.min.apply(null, logs), hi = Math.max.apply(null, logs);
+    function xAt(i) { return padL + (W - padL - padR) * (n > 1 ? i / (n - 1) : 0); }
+    function yAt(v) {
+      var lv = Math.log(v);
+      var f = hi > lo ? (lv - lo) / (hi - lo) : 0;
+      return padT + (H - padT - padB) * (1 - f);
+    }
+    var NS = 'http://www.w3.org/2000/svg';
+    host.innerHTML = '';
+    var wrap = SD.el('div', 'sd-x');
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'sd-svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'sigma 对比图：横轴为采样步序号 0 到 ' + (n - 1) +
+      '，纵轴为对数坐标下的噪声水平 sigma，实线为线性表，虚线为余弦表');
+
+    function seg(x1, y1, x2, y2, color) {
+      var el = document.createElementNS(NS, 'line');
+      el.setAttribute('x1', x1); el.setAttribute('y1', y1);
+      el.setAttribute('x2', x2); el.setAttribute('y2', y2);
+      el.setAttribute('stroke', color); el.setAttribute('stroke-width', '1');
+      svg.appendChild(el);
+    }
+    seg(padL, padT, padL, H - padB, 'var(--rule2)');
+    seg(padL, H - padB, W - padR, H - padB, 'var(--rule2)');
+
+    function poly(sig, color, dash) {
+      var pts = sig.map(function (v, i) {
+        return (isFinite(v) && v > 0) ? (xAt(i) + ',' + yAt(v)) : null;
+      }).filter(Boolean).join(' ');
+      if (!pts) return;
+      var p = document.createElementNS(NS, 'polyline');
+      p.setAttribute('points', pts);
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', color);
+      p.setAttribute('stroke-width', '2');
+      if (dash) p.setAttribute('stroke-dasharray', dash);
+      svg.appendChild(p);
+    }
+    poly(linSig, 'var(--t-image)', null);
+    poly(cosSig, 'var(--t-latent)', '5,4');
+
+    wrap.appendChild(svg); host.appendChild(wrap);
+
+    if (cap) {
+      /* 退化端点（σ 发散）已被跳过，取两条曲线各自第一对有限值来说明"前几步跨多远" */
+      function firstPair(arr) {
+        for (var i = 0; i + 1 < arr.length; i++) {
+          if (isFinite(arr[i]) && arr[i] > 0 && isFinite(arr[i + 1]) && arr[i + 1] > 0) return [arr[i], arr[i + 1], i];
+        }
+        return null;
+      }
+      var pl = firstPair(linSig), pc = firstPair(cosSig);
+      var head = '纵轴按 log(σ) 压缩显示，σ = √(1−ᾱ)/√ᾱ；横轴是第 0…' + (n - 1) +
+        ' 个采样点，从噪声最大的一端排到最干净的一端。';
+      var degen = '<b>余弦表最噪的那一端被有意留空</b>：它在 t=T 时把信号完全毁掉（ᾱ 精确为 0），σ 在数学上是发散的，' +
+        '画不出也不该硬画一个数上去。';
+      var body = '';
+      if (pl && pc) {
+        body = '同样是 N = ' + n + ' 步，各自从第 ' + (pl[2] + 1) + ' 个可画的路标走到下一个：线性表的 σ 从 ' +
+          SD.fmt(pl[0], 2) + ' 降到 ' + SD.fmt(pl[1], 2) + '（降了 ' + SD.fmt(pl[0] - pl[1], 2) + '），' +
+          '余弦表从 ' + SD.fmt(pc[0], 2) + ' 降到 ' + SD.fmt(pc[1], 2) + '（降了 ' + SD.fmt(pc[0] - pc[1], 2) + '）' +
+          '——同样的步数，两种表在前几步跨出的距离并不一样。';
+      }
+      cap.innerHTML = head + body + degen;
+    }
+  }
+
+  function initSigmaChart(root) {
+    var sl = SD.$('#sd-e-sig-n', root), rd = SD.$('#sd-e-sig-nrd', root);
+    if (!sl) return;
+    sl.addEventListener('input', function () {
+      var n = parseInt(sl.value, 10);
+      if (rd) rd.textContent = 'N = ' + n;
+      drawSigmaChart(root, n);
+    });
+    drawSigmaChart(root, parseInt(sl.value, 10));
+  }
+
+  /* 用页面自带的加噪公式模拟"确定性 vs 带随机"两类采样器的定性差异：
+     不是真的跑了任何采样器求解器，只是用同一套 SD.diffuse 混合公式，
+     分别控制"噪声权重是否随 steps 收窄"与"每次是否换一份新噪声"这两个变量 */
+  function initSamplerDemo(root) {
+    var detHost = SD.$('#sd-e-det', root), ancHost = SD.$('#sd-e-anc', root);
+    if (!detHost || !ancHost) return;
+    var S = 48, D = 108;
+    var scene = SD.scene(S);
+    var fixedEps = SD.noiseField(S * S * 3, 424242);
+    var stepsList = [8, 16, 32, 64];
+    function tFor(steps) { return SD.clamp(Math.round((SD.T - 1) * 8 / steps), 0, SD.T - 1); }
+    var ancT = tFor(16);
+
+    detHost.innerHTML = '';
+    stepsList.forEach(function (steps) {
+      var t = tFor(steps);
+      var shot = SD.el('div', 'sd-shot');
+      var cv = SD.canvas(shot, S, S, { raw: true, cssW: D, cssH: D, cls: 'px', label: '模拟确定性采样器在 steps=' + steps + ' 时的重建结果' });
+      SD.diffuse(cv.ctx, scene.data, fixedEps, t, S, 1);
+      shot.appendChild(SD.el('span', 'lb', 'N=' + steps));
+      detHost.appendChild(shot);
+    });
+
+    ancHost.innerHTML = '';
+    stepsList.forEach(function (steps) {
+      var eps = SD.noiseField(S * S * 3, 900001 + steps);
+      var shot = SD.el('div', 'sd-shot');
+      var cv = SD.canvas(shot, S, S, { raw: true, cssW: D, cssH: D, cls: 'px', label: '模拟 ancestral 采样器在 steps=' + steps + ' 时的重建结果' });
+      SD.diffuse(cv.ctx, scene.data, eps, ancT, S, 1);
+      shot.appendChild(SD.el('span', 'lb', 'N=' + steps));
+      ancHost.appendChild(shot);
+    });
+  }
+
+  SD.ready(function () {
+    var root = document.getElementById('sampler');
+    if (!root) return;
+    SD.onVisible(root, function () {
+      initSigmaChart(root);
+      initSamplerDemo(root);
+    });
+  });
+})();
+
+/* ==== 60-steps.js ==== */
+(function () {
+  'use strict';
+
+  SD.ready(function () {
+    var root = document.getElementById('steps');
+    var rootVae = document.getElementById('vae');
+    if (root) initSteps(root);
+    if (rootVae) initVae(rootVae);
+  });
+
+  /* ═══════════ 11 · steps 收益递减 + 前向次数计算器 ═══════════ */
+  function initSteps(root) {
+    var convHost = SD.$('#sd-f-conv-host', root);
+    /* 空容器本身高度为 0，IntersectionObserver 判交叉要看有面积的祖先，
+       所以观察外层有实际高度的 .sd-card，命中后再回填这个空容器 */
+    if (convHost) SD.onVisible(convHost.closest('.sd-card') || convHost, function () { renderConvergence(convHost); });
+    initForwardCalc(root);
+  }
+
+  /* 用加噪公式模拟「步数越多、离散误差越小」的收益递减形状：
+     残留噪声水平 t(N) = 1400/N（取整、限幅），N 越大 t 越小，
+     且降幅本身也越来越小——这正是要画给读者看的「收益递减」曲线形状。
+     这不是真实采样，只是借同一条 x_t 公式做示意。 */
+  function renderConvergence(host) {
+    host.innerHTML = '';
+    var S = SD.SCENE;
+    var scene = SD.scene(S);
+    var eps = SD.noiseField(S * S * 3, 20261101);
+    var steps = [4, 8, 16, 32];
+    steps.forEach(function (n) {
+      var t = SD.clamp(Math.round(1400 / n), 0, SD.T - 1);
+      var shot = SD.el('div', 'sd-shot');
+      var cv = SD.canvas(shot, S, S, {
+        raw: true, cls: 'px',
+        label: n + ' 步模拟：残留噪声约 ' + 0 + '%'
+      });
+      var r = SD.diffuse(cv.ctx, scene.data, eps, t, S, 1);
+      var pct = Math.round(r.sqrtOne * 100);
+      cv.setLabel(n + ' 步模拟：残留噪声约 ' + pct + '%');
+      var lb = SD.el('span', 'lb', n + ' 步 · 残留噪声 ' + pct + '%');
+      shot.appendChild(lb);
+      host.appendChild(shot);
+    });
+  }
+
+  function initForwardCalc(root) {
+    var stepsIn = SD.$('#sd-f-fc-steps', root);
+    var orderHost = SD.$('#sd-f-fc-order', root);
+    var cfgBtn = SD.$('#sd-f-fc-cfg', root);
+    var errEl = SD.$('#sd-f-fc-err', root);
+    var outEl = SD.$('#sd-f-fc-out', root);
+    if (!stepsIn || !orderHost || !cfgBtn || !errEl || !outEl) return;
+
+    var order = 1;
+    var cfgOn = true;
+
+    SD.seg(orderHost, [
+      { label: '1 阶（euler / ddim 等）', value: 1 },
+      { label: '2 阶（dpm++ 2m 等）', value: 2 }
+    ], {
+      active: 0,
+      label: '采样器阶数',
+      onPick: function (v) { order = v; compute(); }
+    });
+
+    cfgBtn.addEventListener('click', function () {
+      cfgOn = !cfgOn;
+      cfgBtn.classList.toggle('on', cfgOn);
+      cfgBtn.setAttribute('aria-pressed', cfgOn ? 'true' : 'false');
+      cfgBtn.textContent = cfgOn ? 'CFG 开启（每步跑两遍）' : 'CFG 关闭（每步跑一次）';
+      compute();
+    });
+
+    stepsIn.addEventListener('input', compute);
+
+    function parseSteps() {
+      var raw = stepsIn.value.trim();
+      if (raw === '') return { err: 'steps 不能为空，请输入一个正整数。' };
+      var n = Number(raw);
+      if (!isFinite(n) || !Number.isInteger(n)) return { err: 'steps 必须是一个整数，比如 20——不接受小数。' };
+      if (n <= 0) return { err: 'steps 必须是正整数（大于 0）。' };
+      return { n: n };
+    }
+
+    function compute() {
+      var p = parseSteps();
+      if (p.err) {
+        errEl.textContent = p.err;
+        outEl.innerHTML = '';
+        return;
+      }
+      errEl.textContent = '';
+      var mult = order * (cfgOn ? 2 : 1);
+      var total = p.n * mult;
+      outEl.innerHTML =
+        '总前向次数 ≈ steps × 采样器阶数 × (CFG 开启则 ×2) = ' +
+        p.n + ' × ' + order + (cfgOn ? ' × 2' : '') + ' = <b>' + total + '</b> 次。<br>' +
+        '同样 steps 下，这个组合比「1 阶 + CFG 关闭」的最省配置多跑 <b>×' + mult + '</b>。';
+    }
+
+    compute();
+  }
+
+  /* ═══════════ 12 · VAE 压缩—还原损失模拟 ═══════════ */
+  function initVae(root) {
+    var host = SD.$('#sd-f-vae-host', root);
+    var toggle = SD.$('#sd-f-vae-toggle', root);
+    if (!host) return;
+
+    var S = SD.SCENE, SMALL = 12;
+    var mismatchOn = true;
+    var reconCanvasCtx = null, reconThirdCtx = null, reconPixels = null;
+
+    SD.onVisible(host.closest('.sd-card') || host, function () { build(); });
+
+    if (toggle) {
+      toggle.addEventListener('click', function () {
+        mismatchOn = !mismatchOn;
+        toggle.classList.toggle('on', mismatchOn);
+        toggle.setAttribute('aria-pressed', mismatchOn ? 'true' : 'false');
+        toggle.textContent = '模拟 VAE 不匹配（发灰）：' + (mismatchOn ? '开' : '关');
+        if (reconPixels) drawThird();
+      });
+    }
+
+    function downThenUp(x0, S, small) {
+      var block = S / small;
+      var small3 = new Float64Array(small * small * 3);
+      var sx, sy, bx, by, si, acc, cnt;
+      for (sy = 0; sy < small; sy++) {
+        for (sx = 0; sx < small; sx++) {
+          acc = [0, 0, 0]; cnt = 0;
+          for (by = 0; by < block; by++) {
+            for (bx = 0; bx < block; bx++) {
+              var y = sy * block + by, x = sx * block + bx;
+              si = (y * S + x) * 3;
+              acc[0] += x0[si]; acc[1] += x0[si + 1]; acc[2] += x0[si + 2];
+              cnt++;
+            }
+          }
+          var di = (sy * small + sx) * 3;
+          small3[di] = acc[0] / cnt; small3[di + 1] = acc[1] / cnt; small3[di + 2] = acc[2] / cnt;
+        }
+      }
+      /* 双线性从 small×small 网格放大回 S×S：学出来的解码器会给出平滑的重建，
+         这里用双线性插值近似「平滑但缺高频细节」的观感 */
+      var out = new Float32Array(S * S * 3);
+      var y, x, c;
+      for (y = 0; y < S; y++) {
+        var fy = SD.clamp((y + 0.5) * small / S - 0.5, 0, small - 1);
+        var y0 = Math.floor(fy), y1 = Math.min(small - 1, y0 + 1), wy = fy - y0;
+        for (x = 0; x < S; x++) {
+          var fx = SD.clamp((x + 0.5) * small / S - 0.5, 0, small - 1);
+          var x0i = Math.floor(fx), x1 = Math.min(small - 1, x0i + 1), wx = fx - x0i;
+          var o = (y * S + x) * 3;
+          for (c = 0; c < 3; c++) {
+            var a00 = small3[(y0 * small + x0i) * 3 + c];
+            var a01 = small3[(y0 * small + x1) * 3 + c];
+            var a10 = small3[(y1 * small + x0i) * 3 + c];
+            var a11 = small3[(y1 * small + x1) * 3 + c];
+            var top = SD.lerp(a00, a01, wx), bot = SD.lerp(a10, a11, wx);
+            out[o + c] = SD.lerp(top, bot, wy);
+          }
+        }
+      }
+      return out;
+    }
+
+    /* 「发灰」模拟：降对比度 + 去饱和，纯色彩变换，不涉及随机数 */
+    function grayify(px) {
+      var CONTRAST = 0.68, SAT = 0.5;
+      var r = SD.clamp((px[0] + 1) * 127.5, 0, 255);
+      var g = SD.clamp((px[1] + 1) * 127.5, 0, 255);
+      var b = SD.clamp((px[2] + 1) * 127.5, 0, 255);
+      var mean = (r + g + b) / 3;
+      r = mean + (r - mean) * SAT; g = mean + (g - mean) * SAT; b = mean + (b - mean) * SAT;
+      r = 128 + (r - 128) * CONTRAST; g = 128 + (g - 128) * CONTRAST; b = 128 + (b - 128) * CONTRAST;
+      return [SD.clamp(r, 0, 255), SD.clamp(g, 0, 255), SD.clamp(b, 0, 255)];
+    }
+
+    function paint(ctx, S, floatData, transform) {
+      var img = ctx.createImageData(S, S);
+      var D = img.data, i, si, di;
+      for (i = 0; i < S * S; i++) {
+        si = i * 3; di = i * 4;
+        var px;
+        if (transform) {
+          px = grayify([floatData[si], floatData[si + 1], floatData[si + 2]]);
+        } else {
+          px = [
+            SD.clamp((floatData[si] + 1) * 127.5, 0, 255),
+            SD.clamp((floatData[si + 1] + 1) * 127.5, 0, 255),
+            SD.clamp((floatData[si + 2] + 1) * 127.5, 0, 255)
+          ];
+        }
+        D[di] = px[0]; D[di + 1] = px[1]; D[di + 2] = px[2]; D[di + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+    }
+
+    function drawThird() {
+      paint(reconThirdCtx, S, reconPixels, mismatchOn);
+    }
+
+    function build() {
+      host.innerHTML = '';
+      var scene = SD.scene(S);
+      reconPixels = downThenUp(scene.data, S, SMALL);
+
+      var shot1 = SD.el('div', 'sd-shot');
+      var cv1 = SD.canvas(shot1, S, S, { raw: true, cls: 'px', label: '原图（96×96）' });
+      paint(cv1.ctx, S, scene.data, false);
+      shot1.appendChild(SD.el('span', 'lb', '原图'));
+      host.appendChild(shot1);
+
+      var shot2 = SD.el('div', 'sd-shot');
+      var cv2 = SD.canvas(shot2, S, S, { raw: true, cls: 'px', label: '压到 12×12 再放大回 96×96 的还原结果' });
+      paint(cv2.ctx, S, reconPixels, false);
+      shot2.appendChild(SD.el('span', 'lb', '还原（正常）'));
+      host.appendChild(shot2);
+
+      var shot3 = SD.el('div', 'sd-shot');
+      var cv3 = SD.canvas(shot3, S, S, { raw: true, cls: 'px', label: '还原结果叠加发灰模拟' });
+      reconThirdCtx = cv3.ctx;
+      drawThird();
+      shot3.appendChild(SD.el('span', 'lb', '还原（模拟 VAE 不匹配）'));
+      host.appendChild(shot3);
+    }
+  }
+})();
+
+/* ==== 70-params.js ==== */
+(function () {
+  "use strict";
+
+  /* ── 13 · 参数总表：一次只动一个对照器 ──
+     选一个参数 → 高亮总表里对应的那一行 → 提示"动它之前应该先固定什么"。
+     教的是控制变量本身，不是任何一个参数该设成多少。 */
+  SD.ready(function () {
+    var root = document.getElementById('params');
+    if (!root) return;
+    var segHost = SD.$('#sd-g-once-seg', root);
+    var note = SD.$('#sd-g-oncenote', root);
+    var table = SD.$('table.sd-t', root);
+    if (!segHost || !note || !table) return;
+
+    var rows = {};
+    SD.$$('tr[data-param]', table).forEach(function (tr) {
+      rows[tr.getAttribute('data-param')] = tr;
+    });
+
+    var msgs = {
+      ckpt: '换 <code>ckpt_name</code> 之前，先固定 seed——这样至少能确认接下来看到的差异，是新模型带来的，不是又抽到了一份不同的初始噪声。',
+      seed: '调 <code>seed</code> 本身就是在探索构图，不需要先固定别的参数——但既然在探索，steps／cfg／sampler_name 这些应该先按兵不动，否则分不清是 seed 变了，还是别的参数也在起作用。',
+      cfg: '调 <code>cfg</code> 之前，先固定 seed；否则对比度、饱和度的变化，你分不出是 cfg 带来的，还是新一轮随机噪声带来的。',
+      steps: '调 <code>steps</code> 之前，先固定 seed，并确认 sampler_name 不是 ancestral／SDE 类——这类采样器每步都会注入新噪声，改 steps 等于直接换了一张图，读不出「步数」本身的影响。',
+      sampler: '换 <code>sampler_name</code> 之前，先固定 seed 和 steps；如果换成 ancestral／SDE 类，本身就引入了新的随机性，这一步换的不只是走法。',
+      denoise: '调 <code>denoise</code> 之前，先固定 seed，并确认这是从 Empty Latent 起步的纯文生图——denoise 调低不是让画面更保守，是直接跳过前面该走的路。',
+      size: '调 <code>width</code>／<code>height</code> 之前，先固定 seed；同时留意底模训练时的原生分辨率，离得越远，越容易出现调别的参数也救不回来的构图崩坏。'
+    };
+
+    var items = [
+      { value: 'ckpt', label: 'ckpt_name' },
+      { value: 'seed', label: 'seed' },
+      { value: 'cfg', label: 'cfg' },
+      { value: 'steps', label: 'steps' },
+      { value: 'sampler', label: 'sampler_name' },
+      { value: 'denoise', label: 'denoise' },
+      { value: 'size', label: 'width/height' }
+    ];
+
+    var curTr = null;
+    function show(key) {
+      if (curTr) curTr.classList.remove('sd-g-hl');
+      var tr = rows[key];
+      if (tr) {
+        tr.classList.add('sd-g-hl');
+        tr.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: SD.reduced() ? 'auto' : 'smooth' });
+      }
+      curTr = tr || null;
+      note.innerHTML = msgs[key] || '';
+    }
+
+    SD.seg(segHost, items, {
+      active: 0,
+      label: '选一个要动的参数',
+      onPick: function (v) { show(v); }
+    });
+    show(items[0].value);
+  });
+
+  /* ── 14 · 排障决策链：点开症状 → 高亮平铺表里对应的那一行 ──
+     决策链本身用原生嵌套 <details> 承载：summary 天然可键盘聚焦、
+     Enter/Space 可展开，无需额外自制的 tablist/tree 逻辑。 */
+  SD.ready(function () {
+    var root = document.getElementById('debug');
+    if (!root) return;
+    var table = SD.$('table.sd-t', root);
+    if (!table) return;
+
+    var rows = {};
+    SD.$$('tr[data-sym]', table).forEach(function (tr) {
+      rows[tr.getAttribute('data-sym')] = tr;
+    });
+
+    var top = SD.$$('details.sd-g-symdet[data-sym]', root);
+    var curTr = null;
+    top.forEach(function (det) {
+      det.addEventListener('toggle', function () {
+        if (!det.open) return;
+        if (curTr) curTr.classList.remove('sd-g-hl');
+        var tr = rows[det.getAttribute('data-sym')];
+        if (tr) {
+          tr.classList.add('sd-g-hl');
+          tr.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: SD.reduced() ? 'auto' : 'smooth' });
+        }
+        curTr = tr || null;
+      });
+    });
+  });
+})();
+
+/* ==== 80-close.js ==== */
+(function () {
+  "use strict";
+
+  /* ── 15 · 校准：误区归位测验（SD.quiz 渲染，本文件只加一层轻量计分） ── */
+  SD.ready(function () {
+    var root = document.getElementById('pitfalls');
+    if (!root) return;
+    var host = SD.$('#sd-h-quiz', root);
+    var scoreEl = SD.$('#sd-h-score', root);
+    if (!host) return;
+
+    var items = [
+      {
+        q: '训练时网络的输入是带噪声的图 x<sub>t</sub> 和时间步 t，它要学习输出的标签是什么？',
+        opts: [
+          '干净图 x<sub>0</sub>（模型直接学会画出图案）',
+          '提示词的 CLIP 编码（CONDITIONING）',
+          '加入的噪声 ε',
+          '下一步要用的 sigma / 噪声水平表'
+        ],
+        ans: 2,
+        why: '标签是加进去的噪声 ε 本身——把训练目标换成分布已知、均值为 0 的噪声，比直接学习复杂的图像分布更容易训练，这是本文的第一因（见第 03 节）。「预测干净图 x<sub>0</sub>」是最常见的误解，模型从来不直接输出图；CONDITIONING 是提示词编码后的产物，与训练标签无关；sigma / 噪声水平表决定的是每一步混入多少噪声，同样不是标签。'
+      },
+      {
+        q: '512×512×3 的图经 VAE 编码器压成 64×64×4 的 latent，相对原始像素空间压缩了多少倍？',
+        opts: [
+          '48 倍',
+          '64 倍——只算了空间面积的压缩，忘了通道数从 3 变成了 4',
+          '8 倍——把边长方向的压缩量当成了整体倍数',
+          '192 倍——把通道数的变化又多乘了一遍'
+        ],
+        ans: 0,
+        why: '786,432 个数变成 16,384 个数，786432÷16384=48，所以是 48 倍（见第 04 节）。「64 倍」只算了空间面积压缩（8×8），漏算了通道数从 3 到 4 带来的抵消；「8 倍」把边长方向的压缩直接当成了整体倍数；「192 倍」把通道数的变化又多乘了一遍，属于重复计入。'
+      },
+      {
+        q: '一句提示词写了 120 个内容词（忽略分词细节），会发生什么？',
+        opts: [
+          '全部 120 个词都会被模型看到，只是处理变慢',
+          '后面的内容会被自动摘要压缩后塞进模型',
+          'ComfyUI 会自动拆成两个 CLIP Text Encode 节点分别处理',
+          '前 75 个内容 token 进入模型参与生成，超出部分被直接截断，不再产生任何影响'
+        ],
+        ans: 3,
+        why: 'CLIP 的上下文长度固定是 77 个 token，首尾各占一个特殊标记，内容只能放 75 个；超出的部分在编码这一步就已经丢失，彻底没有进入模型（见第 07 节）。不存在「自动摘要」或「自动拆成两个节点」这类绕过截断的机制，这两个选项都是对截断的想象性解决；「全部都会被看到只是变慢」完全忽略了 77 token 这个硬限制。'
+      },
+      {
+        q: '把 CFG scale 从 7 调到 20，其余参数不变，画面出现边缘发焦、颜色过度饱和，最可能的原因是什么？',
+        opts: [
+          'VAE 解码器和当前模型不匹配',
+          'CFG 开得过高，把噪声预测沿 (ε<sub>cond</sub> − ε<sub>uncond</sub>) 方向放大得过多，冲出了模型熟悉的分布',
+          'steps 太少，还没收敛',
+          '应该调大 denoise'
+        ],
+        ans: 1,
+        why: 'CFG 的公式是 ε = ε<sub>uncond</sub> + scale × (ε<sub>cond</sub> − ε<sub>uncond</sub>)；scale 越大不是越「听话」，而是把这个方向放大得越极端，容易冲出模型训练时见过的分布，表现为过饱和、发焦（见第 08 节）。VAE 不匹配对应的典型症状是发灰发淡而不是过饱和（第 12 节）；steps 不足与 denoise 偏小对应的是残留噪声、发灰发糊，不是这里描述的症状（第 11 节）。'
+      },
+      {
+        q: '只改 seed，提示词、CFG、steps、采样器全部不变，重新生成一张图，会发生什么？',
+        opts: [
+          '构图大概率会变，因为初始噪声变了，而构图主要由初始噪声决定',
+          '会得到完全一样的图，因为提示词没变',
+          '只有颜色会变，构图不会变',
+          '会报错，因为 seed 必须和提示词绑定'
+        ],
+        ans: 0,
+        why: 'seed 只是初始噪声这一份随机数的起点，而初始噪声主要决定了构图，所以换 seed 之后构图大概率会变（见第 09 节）。「提示词没变所以图完全一样」忽略了 seed 本身就是决定生成结果的关键变量；「只有颜色会变」低估了初始噪声对构图的影响；seed 与提示词之间没有绑定关系，不会报错。'
+      },
+      {
+        q: '把某个 ancestral / SDE 类采样器的 steps 从 20 调到 40，其余参数不变，预期会看到什么？',
+        opts: [
+          '画面基本不变，只是更精细一点',
+          '生成时间不变，只是内部计算更精确',
+          '会报错，因为 ancestral 采样器不支持 steps 超过 20',
+          '大概率是一张构图不同的图，因为这类采样器每一步都会重新注入随机噪声，轨迹不收敛到同一点'
+        ],
+        ans: 3,
+        why: 'ancestral / SDE 类采样器每一步都会重新注入一份新的随机噪声，走的是一条不收敛到固定终点的轨迹；改变 steps 相当于换了一条新轨迹，大概率得到构图不同的图（见第 10 节）。「基本不变只是更精细」描述的是非 ancestral 的普通采样器的行为；这类采样器对 steps 的数值范围没有硬性上限，不会因为超过 20 就报错。'
+      },
+      {
+        q: '纯文生图（不是图生图）把 denoise 从 1.0 调到 0.6，其余参数不变，最可能出现什么？',
+        opts: [
+          '画面更干净，因为噪声强度被调低了',
+          '画面残留没擦净的噪声，发灰发糊，因为起始噪声水平被跳过了一部分',
+          '生成速度变慢',
+          '图像分辨率变小'
+        ],
+        ans: 1,
+        why: 'denoise 控制的是从哪个噪声水平起步，不是滤镜式的降噪强度；纯文生图本该从接近满噪声的水平起步，调小意味着提前跳过了该走的步骤，该擦的噪声没擦完，画面会发灰发糊（见第 11 节）。「更干净」是把 denoise 望文生义成了降噪强度；这个改动不涉及分辨率，对生成速度的影响也不是它的主要作用。'
+      },
+      {
+        q: 'steps 从 20 提到 40、采样器从一阶换成二阶，CFG 保持开启不变，总的网络前向调用次数大约变成原来的多少倍？',
+        opts: [
+          '2 倍',
+          '不变——CFG 的两遍会抵消阶数增加的影响',
+          '4 倍',
+          '8 倍——把 CFG 也算进了倍数变化里'
+        ],
+        ans: 2,
+        why: '总前向次数约等于 steps × 采样器阶数 ×（CFG 开则 ×2）（见第 10、11 节）。这里变化的只有 steps（×2）和采样器阶数（×2），CFG 从头到尾都开着，是一个没有变化的常数因子，不参与倍数计算，所以是 2×2=4 倍。「8 倍」把 CFG 这个恒定因子又乘了一遍，属于重复计入；「不变」误以为 CFG 会抵消其它因素的变化。'
+      },
+      {
+        q: '生成结果整体偏灰发闷、饱和度不足，而不是过饱和烧焦，第一嫌疑应该查哪里？',
+        opts: [
+          'VAE 是不是和当前底模不匹配，或者 denoise 起点是不是被误调小导致残留噪声',
+          'CFG scale 是不是开太高了',
+          '提示词是不是写太长被截断了',
+          'seed 是不是选得不好'
+        ],
+        ans: 0,
+        why: '发灰偏淡的第一嫌疑是 VAE 与当前底模不匹配，或者 denoise 起点被误调小导致噪声没擦干净（见第 11、12 节）。CFG 开太高对应的典型症状是过饱和、烧焦，是这里描述的反面（第 08 节）；提示词截断只影响提示词是否被理解，不会造成整体色彩基调发灰；seed 影响的是构图而不是这种整体色彩问题。'
+      },
+      {
+        q: '生成的图整体过饱和、边缘发焦，按排障决策链，应该先查什么、动哪个参数？',
+        opts: [
+          '先换一个采样器试试',
+          '先把 steps 加到最大',
+          '先换 VAE',
+          '先查 CFG scale 是否开得过高，调低它'
+        ],
+        ans: 3,
+        why: '过饱和发焦这类症状，第一步应该先查 CFG scale 是否开得过高并调低它——CFG 公式里 scale 越大越容易冲出模型熟悉的分布（见第 08、14 节）。采样器与 steps 影响的是收敛效率和轨迹，不直接导致过饱和；VAE 对应的典型症状是发灰发淡而不是过饱和（第 12 节）。'
+      }
+    ];
+
+    SD.quiz(host, items);
+    if (!scoreEl) return;
+
+    var boxes = SD.$$('.sd-qz', host);
+    var answered = new Array(items.length);
+    var i0;
+    for (i0 = 0; i0 < answered.length; i0++) answered[i0] = false;
+    var correct = 0, doneCount = 0;
+
+    function renderScore() {
+      if (doneCount === 0) {
+        scoreEl.innerHTML = '作答后这里会显示首次作答的正确率（共 ' + items.length + ' 题，只计每题第一次点击）。';
+      } else {
+        scoreEl.innerHTML = '已作答 <b>' + doneCount + '</b> / ' + items.length +
+          ' 题，其中首次答对 <b>' + correct + '</b> 题（只计每题第一次点击）。';
+      }
+    }
+
+    boxes.forEach(function (box, qi) {
+      box.addEventListener('click', function (e) {
+        if (answered[qi]) return;
+        var op = e.target && e.target.closest ? e.target.closest('.sd-op') : null;
+        if (!op) return;
+        answered[qi] = true;
+        doneCount++;
+        var opts = SD.$$('.sd-op', box);
+        if (opts.indexOf(op) === items[qi].ans) correct++;
+        renderScore();
+      });
+    });
+
+    renderScore();
+  });
+})();
+</script>
+</body>
+</html>
