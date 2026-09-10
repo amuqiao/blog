@@ -132,7 +132,24 @@ npm install
 ./run.sh blog cover my-post
 ```
 
-命令读取文章的 `title`、`description`、`tags` 和正文摘要，生成 `content/posts/my-post/cover.png`。默认不会覆盖已有封面；需要重做时使用 `--force`，定制画面时使用 `--prompt "补充要求"`。
+命令分两段：先让文本模型把文章的 `title`、`description`、`tags` 和正文摘要写成图片提示词，再交给生图模型出图，产出 `content/posts/my-post/cover.png`。如果 `static/posts/my-post/` 下有 HTML 交互页，还会一并抽取交互页的标题层级、每节导语和收束一起作为输入——这类文章的正文真源在交互页里，`index.md` 只有导语和 iframe，只读 `index.md` 会让封面文不对题。没有同名静态目录的普通文章行为不变。同目录的 `cover-prompt.txt` 记录本次的完整提示词、文本模型先写下的一行中文「画面构思」、两个模型名和全部参数，便于复现。默认不会覆盖已有文件；需要重做时使用 `--force`，定制画面时使用 `--prompt "补充要求"`。
+
+画风有三种来源，优先级从高到低：
+
+```bash
+# 用预设；预设放在可插拔的 scripts/cover/styles.json，增删改风格不需要动代码
+./run.sh blog cover my-post --style flat-vector
+
+# 临时指定，不入库
+./run.sh blog cover my-post --style-text "胶片颗粒的黑白纪实"
+
+# 都不传，由文本模型自选画风；它选了什么会记进 cover-prompt.txt
+./run.sh blog cover my-post
+```
+
+`--style list` 查看全部预设。`--dry-run` 只跑文本模型看提示词，不出图也不写文件；它会先打印那行「画面构思」——画面主体是谁、正在做什么动作，一句中文说死。先用 `--dry-run` 看构思有没有抓住文章主题，抓对了再正式出图，能省一次出图的钱。`--out <path>` 换输出位置，`--json` 把提示词、参数和产物路径打成 JSON，便于被其它程序或 agent 调用。
+
+看到满意的封面时，打开它旁边的 `cover-prompt.txt`，把里面的风格描述抄进 `scripts/cover/styles.json` 起个名字，以后就能 `--style <你的名字>` 长期复用。
 
 交互文章采用“Markdown 发布壳 + HTML 正文真源”的方式：
 

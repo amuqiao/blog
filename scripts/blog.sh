@@ -68,9 +68,16 @@ usage() {
             依赖 Node、Playwright、Google Chrome 和 gifski。首次使用前运行 npm install。
             常用参数：--duration 4 --fps 15 --width 800 --selector .stage --browser chrome --clock realtime
   cover     执行：node scripts/cover/generate.mjs <slug> [options]
-            读取文章 front matter 和正文摘要，默认生成 2048x1152 的 cover.png。
+            两段生成：先让文本模型把文章信息写成图片提示词，再交给生图模型出图。
+            若 static/posts/<slug>/ 下有 HTML 交互页，会一并抽取其标题层级与每节
+            导语作为输入；这类文章的正文真源在交互页里，index.md 只有导语和 iframe。
+            默认产出 content/posts/<slug>/cover.png，同目录 cover-prompt.txt
+            记录本次提示词与全部模型参数，便于复现。
+            风格预设放在可插拔的 scripts/cover/styles.json，增删改不需要动代码；
+            --style <name> 用预设，--style-text 临时指定，都不传则由文本模型自选。
             依赖 Node.js 20+、npm install 和环境变量 OPENAI_API_KEY。
-            常用参数：--prompt "补充要求" --quality high --force --dry-run
+            常用参数：--style list --style flat-vector --style-text "画风描述"
+                      --prompt "补充要求" --quality high --out <path> --json --force --dry-run
 EOF
 }
 

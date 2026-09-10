@@ -1,0 +1,29 @@
+{
+  "comment": "封面画风预设。可自由增删改，脚本不写死任何风格。key 是 --style 的取值；label 用于展示和存档；direction 是交给文本模型的画风方向，它会据此扩写成完整的英文图片提示词。",
+  "styles": {
+    "neon-3d": {
+      "label": "深色霓虹 3D",
+      "direction": "glossy 3D render on a near-black background, saturated neon accent colors with emissive glow, volumetric light, polished reflective surfaces"
+    },
+    "flat-vector": {
+      "label": "浅底平面矢量海报",
+      "direction": "flat vector illustration on an off-white background, no photorealism, no 3D shading, no glow, three or four solid colors plus one accent, uniform line weight, large simple shapes"
+    },
+    "iso-blueprint": {
+      "label": "等距蓝图线稿",
+      "direction": "technical blueprint drawing in isometric projection, deep navy background, a single cyan ink in thin uniform line weight, fine construction grid, no photorealistic materials, no glow"
+    },
+    "paper-print": {
+      "label": "纸质孔版印刷",
+      "direction": "risograph print on warm off-white paper, two or three matte spot inks with slight misregistration, visible paper grain, no glow, no digital gradients"
+    },
+    "minimal-mono": {
+      "label": "极简瑞士海报",
+      "direction": "minimal Swiss editorial poster, near-white background, one accent color plus black, very few elements, generous negative space, exact geometric primitives, flat fills"
+    },
+    "hand-drawn": {
+      "label": "手绘墨线水彩",
+      "direction": "hand-drawn ink line work with loose watercolor wash on warm neutral paper, visible pen texture and slight imperfection, muted natural pigments, no digital gradients"
+    }
+  }
+}
