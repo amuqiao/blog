@@ -110,13 +110,26 @@ head("2 版式契约");
 {
   const page = await openPage(b, P.html, { viewport: { width: 1920, height: 900 } });
   const r = await page.evaluate(() => {
-    const sec = document.querySelector("main > section[id]");
-    const ps = [...sec.children].filter((x) => x.tagName === "P");
-    const norm = ps.find((x) => !/lead/.test(String(x.className)));
-    const lead = ps.find((x) => /lead/.test(String(x.className)));
     const W = (n) => (n ? Math.round(n.getBoundingClientRect().width) : null);
-    const shell = document.querySelector('[class*="shell"]');
+    /* 页面结构差异很大：有的没有 <main>，有的正文段落不是 section 的直接子元素。
+       取「第一段够长的正文」比按结构层级取更稳。 */
+    const scope = document.querySelector("main") || document.body;
+    const longs = [...scope.querySelectorAll("p")].filter((x) => x.textContent.trim().length > 40);
+    const norm = longs.find((x) => !/lead/.test(String(x.className)));
+    const lead = [...scope.querySelectorAll("p")].find((x) => /lead/.test(String(x.className)));
+    const shell = document.querySelector('[class*="shell"]') || scope;
+    /*
+     * 两个版式家族：带侧栏长卷 vs 无侧栏单列。1188 是「236 侧栏 + 856 正文」算出来的，
+     * 套到无侧栏页面会得到一条 74 个汉字宽的文字，所以必须分支。
+     * 按类名认侧栏不可靠——transformer 的导航叫 spine，而它页面里另有一堆 .tx-side 内容块。
+     * 改成看 shell 是不是两列栅格、第一列是不是侧栏宽度。
+     */
+    const tracks = getComputedStyle(shell).gridTemplateColumns.split(/\s+/).filter(Boolean);
+    const first = tracks.length >= 2 ? parseFloat(tracks[0]) : NaN;
+    const sidebar = tracks.length >= 2 && first >= 180 && first <= 320;
     return {
+      sidebar,
+      tracks: tracks.join(" "),
       shell: W(shell),
       para: W(norm),
       lead: W(lead),
@@ -134,7 +147,8 @@ head("2 版式契约");
    * 列宽本身就是行长控制器，再加一道就会出现「文字 624 / 图 952」那种右边空一条的版面。
    * ch 是数字 0 的宽度，拿它量中文会缩水近一半，一并禁掉。
    */
-  if (r.paraMax !== "none") F(`正文段落设了 max-width: ${r.paraMax} —— 列宽即行长，不要加第二道限制`);
+  if (!r.para) { warn("找不到够长的正文段落，跳过版式契约"); }
+  else if (r.paraMax !== "none") F(`正文段落设了 max-width: ${r.paraMax} —— 列宽即行长，不要加第二道限制`);
   else ok(`正文段落无独立 max-width（实宽 ${r.para}）`);
   if (r.chUnits) F(`${r.chUnits} 处 max-width 用了 ch —— 中文行长请用列宽控制，ch 会缩水近一半`);
   const band = (v, lo, hi, name) => {
@@ -142,11 +156,21 @@ head("2 版式契约");
     if (v < lo || v > hi) F(`${name} ${v} 超出契约区间 ${lo}–${hi}`);
     else ok(`${name} ${v}（契约 ${lo}–${hi}）`);
   };
-  band(r.shell, 1180, 1230, "shell 宽度");
-  band(r.para, 845, 885, "正文列宽");
-  band(r.lead, 700, 730, "导语宽度");
-  if (r.fontSize !== "16px") F(`正文字号 ${r.fontSize}，契约是 16px`);
-  else ok("正文字号 16px");
+  if (!r.para) { /* 上面已 warn，不再判家族 */ }
+  else if (r.sidebar) {
+    ok(`版式家族：带侧栏长卷（栅格 ${r.tracks}）`);
+    band(r.shell, 1180, 1230, "shell 宽度");
+    band(r.para, 845, 885, "正文列宽");
+    band(r.lead, 700, 730, "导语宽度");
+  } else {
+    ok("版式家族：无侧栏单列");
+    band(r.para, 700, 900, "正文列宽");
+  }
+  if (r.para) {
+    const px = Number(String(r.fontSize).replace("px", ""));
+    if (!(px >= 16)) F(`正文字号 ${r.fontSize}，契约要求不小于 16px`);
+    else ok(`正文字号 ${r.fontSize}`);
+  }
 }
 
 /* ── 3 窄屏 ── */
