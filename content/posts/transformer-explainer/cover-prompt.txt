@@ -1,0 +1,11 @@
+# 生成时间 2026-09-10T13:17:38+08:00
+# 文本模型 gpt-4.1
+# 生图模型 gpt-image-2 · 2048x1152 · quality=high
+# 风格来源 文本模型自选
+# 风格 纸本插画风
+# 补充要求 这篇文章的主问题只有一个：怎么让句子里的代词「它」一步读到前文的名词「猫」。核心隐喻是：注意力就是一次可微的字典查询——用一个 query 去和一排 key 逐个比对，按匹配程度加权，把对应的 value 取回来。画面只画这一个动作：一个查询者、一排候选、一次带权重的取回。单一主体、单一动作、一个清晰的视觉焦点。绝对不要把位置编码、多头、FFN、残差、LayerNorm、Mask 这些零件名逐个画成图标或表盘围成一圈——那是最常见的失败做法，必须避免。也不要画成组件总览图或架构图。
+# 复现 ./run.sh blog cover transformer-explainer --prompt "这篇文章的主问题只有一个：怎么让句子里的代词「它」一步读到前文的名词「猫」。核心隐喻是：注意力就是一次可微的字典查询——用一个 query 去和一排 key 逐个比对，按匹配程度加权，把对应的 value 取回来。画面只画这一个动作：一个查询者、一排候选、一次带权重的取回。单一主体、单一动作、一个清晰的视觉焦点。绝对不要把位置编码、多头、FFN、残差、LayerNorm、Mask 这些零件名逐个画成图标或表盘围成一圈——那是最常见的失败做法，必须避免。也不要画成组件总览图或架构图。" --quality high --force
+
+An illustrated scene in traditional ink and watercolor on matte paper, featuring a single open dictionary laid horizontally against a soft neutral background; a translucent hand-shaped silhouette hovers above, releasing a glowing query token that trails delicate lines toward a row of highlighted words within the dictionary. The highlighted words subtly emit gentle, varied colors, representing weighted matches. The lighting is clear and natural, casting soft handmade shadows, while paper fibers and ink wash textures remain visible. The atmosphere is clean, contemplative, and lightly academic, with a light-toned, uncluttered background for focus.
+Composition: wide 16:9 landscape, primary subject centered in a generous safe area so responsive cropping preserves the meaning.
+Constraints: no readable text, no letters, no numbers, no logos, no trademarks, no watermark, no decorative dashboard, no meaningless charts. Depict technically meaningful relationships rather than generic atmosphere.
