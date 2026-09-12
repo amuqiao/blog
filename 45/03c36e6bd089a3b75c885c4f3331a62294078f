@@ -1,0 +1,35 @@
+content/posts/taskiq-explainer/index.md
+  s_952d1c5bcd4222::t_b488b79cd30723 1-39
+static/posts/taskiq-explainer/interactive.html
+  s_952d1c5bcd4222::t_b488b79cd30723 1-2132
+content/posts/taskiq-explainer/cover-prompt.txt
+  s_952d1c5bcd4222::t_b488b79cd30723 1-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "4503c36e6bd089a3b75c885c4f3331a62294078f",
+  "prompts": {},
+  "sessions": {
+    "s_952d1c5bcd4222": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa24594b5ea7f5db63a065b",
+        "model": "Doubao-Seed-2.1-pro__dev"
+      },
+      "human_author": "wangqiao <wangqiao@crazymaplestudio.com>",
+      "custom_attributes": {
+        "edit_kind": "bash",
+        "display_model_name": "Doubao-Seed-2.1-Pro",
+        "client_type": "ide",
+        "tool_use_id": "6aa4d8cce406f0e70716c97d",
+        "external_session_id": "6aa24594b5ea7f5db63a065b",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "session_id": "6aa24594b5ea7f5db63a065b",
+        "operation_id": "6aa4d8cce406f0e70716c97d",
+        "tool_name": "Shell"
+      }
+    }
+  }
+}
