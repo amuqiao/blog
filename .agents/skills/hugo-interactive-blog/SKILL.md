@@ -1,86 +1,94 @@
 ---
 name: hugo-interactive-blog
-description: 把想法、素材或草稿转成适合长期维护的 Hugo Blowfish 知识型博客文章，默认用 Markdown + shortcode 组织正文，按需加入文章级 HTML/CSS/vanilla JS 局部交互。
+description: 在本仓库写 Hugo 博客文章时使用。适用于新建文章、扩写、重写、整理笔记素材、写《一文读懂》知识长文，以及为文章加 Blowfish shortcode、Mermaid 图、伪代码讲解、HTML/CSS/JS 交互 demo 或独立 iframe 交互页。用户给出知识点、主题、散乱笔记或草稿，希望产出可发布文章时优先用它。
 ---
 
 # Hugo Interactive Blog
 
-在本仓库创建、扩写、重写或整理博客文章时使用本 skill，尤其是用户只给出想法、主题、笔记或素材，希望产出可发布的 Hugo 知识型文章时。
+把一个知识点写成读者能复述、能判断、能迁移的 Hugo 文章。
 
-目标是写出面向实践者的 Hugo 知识型教程：让读者快速建立心智模型，知道怎么使用、怎么判断、怎么排错，并能迁移到自己的项目。
+判断标准不是字数，是读完之后读者能不能讲清这套机制、知道什么时候该用、出问题时知道往哪查。
 
-创建或大幅重写教程、解释、配置、排障类文章时，必须先读 [写作指南](references/writing-guide.md)。
+充分使用 Hugo 的表达能力：Markdown 负责主线叙述，Blowfish shortcode 负责图文表达，伪代码和注释负责讲解机制，HTML/CSS/JS 负责交互，必要时独立 HTML 走 iframe。**不要把文章写成纯文字长文，也不要一上来就写成 HTML 应用。**
 
-## 稳定产物
+创建或大幅重写文章前，必须先读 [写作指南](references/writing-guide.md)（怎么收束主线、怎么讲）和 [表达手册](references/expression-playbook.md)（用什么讲、怎么写对）。
 
-- Markdown 是正文真源，负责主线、解释、边界和结论。
-- Blowfish shortcode 负责主题一致的图文表达，例如 Mermaid、图表、步骤、时间线、折叠、标签页、图片集。
-- 文章级 HTML/CSS/vanilla JS 只负责局部交互，让读者通过切换、拖动、播放、重置或观察状态变化来理解机制。
-- 新文章以 Hugo 页面包、Markdown 正文、shortcode 和局部交互为基本形态。
-- 默认读者是想学会使用、理解关键点并能迁移的实践者；源码只作为必要原理和排障依据。
+## 第一步：收束
 
-## 教程底线
+动笔前先定下四件事，写不出来就不要开始写正文：
 
-创建或大幅重写教程、原理、配置、排障类文章时，不能只交付自然段加代码块。默认至少满足：
+1. **主问题**：这篇只回答一个问题。
+2. **主线**：默认因果链；更合适时改用过程链、对比链、结构链或决策链。
+3. **第一因**：全文只有一个，后面每一节都要能回扣它。
+4. **读完能做什么**：一个具体动作，接入、配置、排障或判断取舍。
 
-- 有一个明确心智模型，并且至少在图、表、交互 demo 或结尾检查表中落地一次。
-- 至少使用一个实质性 shortcode 可视化组件；仅用 `lead` 或 `alert` 不算图文表达。
-- 涉及流程、状态、队列、生命周期、调度、参数变化或故障分支时，默认设计一个可观察的局部交互 demo；确实不用交互时，必须用更合适的图解替代。
-- 关键代码块前先给伪代码、状态表、时序图、组件地图或文件职责图。
-- 真实代码只展示可迁移的最小实现，并用少量关键注释解释生命周期、进程边界、序列化、错误处理、依赖注入或资源归属。
-- 不用大量库源码证明理解。源码摘录只放在“深入原理”或折叠块中，并且必须回答一个具体问题。
+材料散乱时先收束，**不要把所有材料平均展开成并列清单**。详见写作指南。
 
-## 仓库契约
+## 第二步：选表达载体
 
-仓库结构、资源映射和启动入口以根目录 `AGENTS.md` 为准。常用硬规则：
+按知识点特点**按需上探**，不是越高越好。一篇里可以混用不同档。
 
-- 普通文章放在 `content/posts/<post-slug>/index.md`。
-- 文章专属图片、PDF、JSON、音频、视频等页面资源优先放在 `content/posts/<post-slug>/...`。
-- `date` 必须带 `+08:00` 时区偏移，并且是当前时间之前的过去时间；正式发布文章必须 `draft: false`。
-- 未来日期和 `draft: true` 都会让 Hugo 静默跳过文章，构建仍可能成功。
-- 正文在 Markdown 中，默认保留站内目录；只有文章确有特殊理由时才设置 `showTableOfContents: false`。
-- 文章列表/首页卡片封面使用 `cover.*`，文章页 hero 背景使用 `background.*`。
-- 用户要求生成普通静态封面时，使用 `./run.sh blog cover <slug>`。
+| 档 | 用什么 | 什么时候上探到这一档 |
+| --- | --- | --- |
+| 1 | Markdown 文字、表格、代码块、伪代码 | 线性解释、概念澄清，没有结构或流程要展示 |
+| 2 | 加 Blowfish shortcode：`mermaid`、`chart`、`tabs`、`steps`、`timeline`、`accordion`、`feature-grid` | 出现结构、流程、分支、步骤、对比 |
+| 3 | 加文章级内联 HTML/CSS/vanilla JS 局部 demo | 出现可变参数或状态变化，读者需要动手拨一下才看得懂 |
+| 4 | 独立单文件 HTML + `iframe` + 摘要页 | 多站长卷、需要贯穿全文的统一交互语言、需要独立打开或离线分享、代码量大到会淹没正文 |
 
-## Hugo 与 Blowfish
+三条配套规则：
 
-- 对 Blowfish 已支持的能力，优先使用 shortcode，不手写等价 raw HTML。常见 shortcode 包括 `alert`、`badge`、`button`、`cta`、`lead`、`figure`、`gallery`、`mermaid`、`chart`、`tabs` + `tab`、`accordion` + `accordionItem`、`steps` + `step`、`timeline` + `timelineItem`、`feature-grid` + `feature`、`stat`、`stats`、`video`、`youtubeLite`、`katex`、`typeit`、`codeimporter`。实际清单以 `themes/blowfish/layouts/shortcodes/` 为准。
-- 架构图、流程图、时序图优先用 Blowfish 的 `mermaid` shortcode；不要使用当前站点尚未配置渲染支持的 Mermaid 代码围栏。
-- Mermaid flowchart 默认用最低风险语法：矩形节点 `A["label"]`、普通箭头 `A --> B`、短 label。避免 raw HTML、`@name`、开头点号、复杂括号、复杂标点、菱形判断节点和边标签；分支含义写进目标节点 label。
-- Hugo 构建不会执行 Mermaid。改过 Mermaid 后，要用本地预览或浏览器错误信息确认没有运行时语法错误。
-- 站点已开启 Goldmark raw HTML 和 block attributes；小型文章级 HTML、`<style>`、`<script>` 可以直接写在 Markdown 中，Markdown 块也可以用 `{.class}` 加类。
+- **不确定就停在低档。** 上探要有理由：这一档能让读者看到低一档看不到的东西。做不到就退回去。
+- **文字真源随档位转移。** 档 1 到 3，Markdown 是正文真源；档 4，HTML 是正文真源，`index.md` 只保留 front matter、导语、入口按钮和 `iframe`，不重复维护正文、目录或模块清单。
+- **档 4 才需要自建的东西，档 1 到 3 不要重造。** 目录锚点用站内 TOC，首屏用导语加第一张图加 `cover.*`/`background.*`，主题已经给了。
 
-## 局部交互
+各档的具体写法、shortcode 选用、Mermaid 语法、demo 骨架、档 4 的单文件契约，都在[表达手册](references/expression-playbook.md)。
 
-- 默认把局部 demo 内联在 Markdown 中。只有需要独立打开、代码过长或确实需要隔离时，才放在 `static/posts/<post-slug>/...` 并用相对链接或 `iframe` 引用。
-- `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 slug 必须一致。
-- `iframe` 是独立文档，不能继承父页面的 `html.dark`；iframe demo 必须在自身 CSS 中用 `prefers-color-scheme` 适配明暗，并接受它不跟随站点外观开关这一代价。
-- 所有 CSS 必须通过文章专属 root class 或 ID 限定作用域；一次性 demo 样式优先内联，第二次复用同一套样式时再上提到 `assets/css/custom.css`。
-- 本站默认外观是 dark，并会随系统自动切换。文章级 demo 必须同时适配亮色和暗色。
-- 暗色分支使用 `html.dark .my-demo { ... }`；界面色优先使用主题变量，例如 `rgb(var(--color-neutral-200))`、`rgb(var(--color-neutral-800))`、`rgb(var(--color-primary-500))`。
-- 明暗两套都要满足基本对比度；颜色不能作为唯一信息载体。深色底不要设置 `-webkit-font-smoothing: antialiased`，淡化状态不要用 `opacity` 压整块文字。
-- 控件要有可访问名称；滑块等动态控件要同步可读状态，例如 `aria-valuetext`；状态变化需要读屏提示时使用 `role="status"`。
-- 移动端和桌面端都要能阅读和操作，文字、控件、SVG/canvas 内容不得重叠或横向溢出。
+## 硬底线
+
+创建或大幅重写教程、原理、配置、排障类文章时，下面每条都要能当场判定：
+
+- 开头**显式写出主问题**，从具体问题或真实场景切入，讲清它为什么出现、解决什么、边界在哪。不用空泛开场。
+- **第一因在它自己那一节被显式命名**，不是只出现在标题或后文的回指里。
+- 至少一个**实质性可视化**：Mermaid、chart、结构表、对比表或交互 demo。只用 `lead` 或 `alert` 不算。
+- 至少一处**对比或反例**：相近概念的差别、常见误区、不适用场景或取舍。只讲「怎么用」不讲「什么时候不该用」不算写完。
+- 每个抽象概念都落到一个**可观察对象**：图、表、命令输出、状态变化、最小例子或 demo。
+- 关键代码块前**先给伪代码、状态表、时序图、组件地图或文件职责图**。
+- 真实代码只给可迁移的最小实现，注释解释生命周期、进程边界、序列化、错误处理、依赖注入或资源归属。
+- **术语保留英文原名**，首次出现处讲清楚，不要换成自造的中文词简化掉。
+- 涉及流程、状态、队列、生命周期、调度、参数变化或故障分支时，先考虑上探到档 3；确实不需要交互时，必须用更合适的图解替代。
+- 不用大段库源码证明理解。源码摘录只放在「深入原理」或折叠块里，且必须回答一个具体问题。
 
 ## 内容诚信
 
-- 模拟演示必须在图注或相邻文字中说明它是示意，不是真实模型输出或真实数据输出。
-- 避免写“演示均为程序化实算”这类容易被误解为真实模型运行的措辞；需要说明时写“公式实算的示意，非模型输出”。
-- 不编造论文数字、跑分、耗时、显存、提升百分比或质量损失；要给具体数字就现场推导、计算或引用可核验来源。
-- 不写无依据的“建议设为 X”。需要给操作建议时，说明判断方法和观察标准。
+- 模拟演示必须在图注或相邻文字里说明它是示意，不是真实模型输出或真实数据。**最显眼的那个演示最容易漏标。**
+- 不要写「演示均为程序化实算」这类会被理解成「页面真的在跑模型」的措辞；要写「公式实算的示意，非模型输出」。
+- 不编造论文数字、跑分、耗时、显存、提升百分比或质量损失。要给具体数字就现场推导、计算或引用可核验来源。
+- 不写没有依据的「建议设为 X」。要给建议就给判断方法和观察标准。
+
+## 仓库契约
+
+仓库结构、资源映射和启动入口以根目录 `AGENTS.md` 为准，不在这里重复。**只有下面几条是 `AGENTS.md` 没写、且踩过的：**
+
+- 新建文章用 `./run.sh blog new-post <slug>`，它走 archetype 生成页面包，不要手搓目录。
+- archetype 产出的是 `draft: true` 和本机时区的 `date`，**两个都必须改**：`date` 要带 `+08:00` 且是过去时间，正式发布要 `draft: false`。取当前时间用 `date +%Y-%m-%dT%H:%M:%S+08:00`。
+- 未来日期和 `draft: true` 都会让 Hugo **静默跳过**文章，构建仍然成功——所以构建通过不等于文章发出来了，必须查产物。
+- 档 1 到 3 保留站内目录；档 4 必须设 `showTableOfContents: false`，因为正文在 iframe 里，站内 TOC 会是空的。
 
 ## 验证
 
-声称完成前，运行最小相关验证：
+声称完成前必须实际跑过，只看 diff 不算：
 
-- 内容或构建相关改动：`./run.sh blog verify`。
-- 新文章或改 slug/date/front matter 后：确认 `public/posts/<post-slug>/index.html` 存在，并确认 `public/sitemap.xml` 收录该 URL。
-- 脚本或 shell 改动：补充与编辑文件匹配的窄范围语法检查或单元检查。
-- 文章级 HTML/CSS/JS 改动：当视觉行为重要时，用 `./run.sh up` 预览；至少检查亮色、暗色和 360px 窄屏；如果浏览器工具可用，再用浏览器或截图检查页面。
-- Mermaid 改动：除 Hugo 构建外，还要用浏览器控制台或 headless browser 确认 Mermaid 已渲染成 SVG 且没有 `Syntax error in text`。
+- 内容或构建改动：`./run.sh blog verify`。
+- 新文章或改过 slug/date/front matter：确认 `public/posts/<post-slug>/index.html` 存在，且 `public/sitemap.xml` 收录该 URL。这一步是上面「静默跳过」的唯一防线。
+- 档 3 或档 4：`./run.sh up` 预览，至少看亮色、暗色、360px 窄屏三种情况。有浏览器工具就再截图确认——**排版问题只有看图才发现**：标签重叠、canvas 只填一角、宽表撑破。
+- 档 4 另外确认：`public/posts/<post-slug>/<page>.html` 存在，断网或用 `file://` 直接打开仍然完整可用。
+- Mermaid 改动：Hugo 构建不执行 Mermaid，必须用浏览器控制台确认已渲染成 SVG 且没有 `Syntax error in text`。
+- 脚本或 shell 改动：补一个与改动文件匹配的窄范围检查。
 
-如果无法验证，说明具体原因和剩余风险。
+无法验证时，说明具体原因和剩余风险。
 
 ## 维护本 Skill
 
-往本 skill 加规则前，先问两件事：这条是否来自真实写作或验证中反复出现的问题？违反它能否当场判定？两个答案都是否定时，不要加入。能放进 `references/writing-guide.md` 的写作方法，不要塞回入口文件。
+往这里加规则前先问两件事：这条是否来自真实写作或验证中**反复出现**的问题？违反它能否**当场判定**？两个答案都是否的，不要加。
+
+分工是固定的：**入口文件只放判定和决策**，写作方法进 `references/writing-guide.md`，表达手段和可抄的模板进 `references/expression-playbook.md`。能下沉的不要塞回入口。
