@@ -1,0 +1,13 @@
+# 生成时间 2026-09-11T20:05:05+08:00
+# 文本模型 gpt-4.1
+# 生图模型 gpt-image-2 · 2048x1152 · quality=high
+# 风格来源 文本模型自选
+# 画面构思 一个信封被从屏幕一侧的手递出，通过一道清晰的透明隔板，另一侧的手正要接住它，这道隔板将画面一分为二，隔开了发送方和接收方。
+# 风格 数字水彩淡色透视
+# 交互页 static/posts/taskiq-explainer/interactive.html
+# 补充要求 无
+# 复现 ./run.sh blog cover taskiq-explainer --quality high --force
+
+A digital watercolor illustration featuring a single clear envelope being passed from one hand to another through a prominent, transparent dividing pane that bisects the scene vertically. On the left, a hand emerges from a softly glowing computer monitor, offering the envelope through the glassy barrier; on the right, another hand reaches out to receive it. The transparent divider is sharply rendered, creating a precise boundary between sender and recipient. The palette is light and airy, dominated by pale blues, soft whites, and hints of gentle pinks, with subtle gradients and soft background washes creating a sense of openness and digital atmosphere. The overall mood is clean and modern, with gentle lighting and a touch of translucency emphasizing the boundary and the direct action of passing the single message.
+Composition: wide 16:9 landscape, primary subject centered in a generous safe area so responsive cropping preserves the meaning.
+Constraints: no readable text, no letters, no numbers, no logos, no trademarks, no watermark, no decorative dashboard, no meaningless charts. Depict technically meaningful relationships rather than generic atmosphere.

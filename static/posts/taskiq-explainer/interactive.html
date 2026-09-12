@@ -1,0 +1,2132 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一文读懂 taskiq · kiq 之后，你的函数并没有被调用</title>
+<style>
+/* ══════════ 1 设计令牌 ══════════
+   两侧：客户端一侧偏靛紫，worker 一侧偏琥珀，中间是那条序列化边界。
+   全篇的配色只服务于这一件事——让你随时知道「现在讲的是哪一侧」。 */
+:root{
+  --bg:#F5F4F8; --card:#FCFBFE; --line:#D8D4E4; --line2:#E7E4EF;
+  --ink:#1D1A28; --ink2:#413C55; --muted:#5D5772;
+  --cli:#5B4B9E;  --cli-s:#ECE8F7;   /* 客户端侧 */
+  --wrk:#9A5B12;  --wrk-s:#F8EEDF;   /* worker 侧 */
+  --edge:#A32B4B; --edge-s:#FAE7EB;  /* 序列化边界 */
+  --ok:#1F6B4F;   --ok-s:#E4F1EB;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --r:4px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:20px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.84 var(--sans);
+  -webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* ══════════ 2 布局：见 docs/explainer/references/skeleton.md 的布局契约 ══════════ */
+.tq-shell{display:grid;grid-template-columns:236px minmax(0,1fr);gap:0 44px;
+  max-width:1188px;margin:0 auto;padding:0 26px;align-items:start}
+.tq-side{position:sticky;top:0;height:100vh;padding:20px 6px 20px 0;overflow-y:auto;min-width:0}
+.tq-main{min-width:0;max-width:872px;padding-bottom:110px}
+main>section:focus{outline:none}
+@media(max-width:1000px){
+  .tq-shell{grid-template-columns:minmax(0,1fr);padding:0 18px}
+  .tq-side{display:none}
+  .tq-main{padding-bottom:72px}
+}
+.tq-skip{position:absolute;left:-9999px;top:0;background:var(--cli);color:#fff;padding:8px 14px;z-index:50}
+.tq-skip:focus{left:0}
+.tq-prog{position:fixed;left:0;top:0;height:2px;background:var(--cli);width:0;z-index:40}
+
+/* ══════════ 2b 导航：消息旅程轨道，每站标注发生在哪一侧 ══════════ */
+.tq-nav-hd{font:600 11px/1.5 var(--mono);letter-spacing:.14em;color:var(--muted);
+  text-transform:uppercase;margin:0 0 4px}
+.tq-nav-lg{font:11px/1.6 var(--mono);color:var(--muted);margin:0 0 12px;display:flex;gap:10px;flex-wrap:wrap}
+.tq-nav-lg i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:-1px}
+.tq-nav{list-style:none;margin:0;padding:0}
+.tq-nav a{display:grid;grid-template-columns:4px 20px minmax(0,1fr);gap:8px;align-items:baseline;
+  padding:4px 6px 4px 0;text-decoration:none;color:var(--ink2);font-size:13px;line-height:1.5;
+  border-radius:var(--r);transition:background .15s}
+.tq-nav a:hover{background:var(--cli-s)}
+.tq-nav .sd{align-self:stretch;border-radius:2px;background:var(--line)}
+.tq-nav a[data-side="cli"] .sd{background:var(--cli)}
+.tq-nav a[data-side="edge"] .sd{background:var(--edge)}
+.tq-nav a[data-side="wrk"] .sd{background:var(--wrk)}
+.tq-nav a[data-side="both"] .sd{background:linear-gradient(var(--cli),var(--wrk))}
+.tq-nav .no{font:11px/1.5 var(--mono);color:var(--muted)}
+.tq-nav a[aria-current="true"]{background:var(--cli-s);font-weight:650;color:var(--ink)}
+.tq-nav a:focus-visible,.tq-b:focus-visible,.tq-sl:focus-visible,.tq-tab:focus-visible,
+.tq-x:focus-visible,.tq-code:focus-visible{outline:2px solid var(--cli);outline-offset:2px}
+.tq-mini{display:none;margin:0 0 20px}
+@media(max-width:1000px){.tq-mini{display:block}}
+.tq-mini summary{cursor:pointer;font:600 14px/1.6 var(--mono);color:var(--cli);
+  padding:9px 12px;background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.tq-mini ol{margin:8px 0 0;padding:0 0 0 22px;font-size:14px}
+
+/* ══════════ 3 排版 ══════════ */
+.tq-hero{padding:56px 0 40px;border-bottom:1px solid var(--line)}
+.tq-hero h1{font:700 clamp(26px,4.2vw,42px)/1.22 var(--sans);margin:0;letter-spacing:-.012em}
+.tq-hero h1 .lt{display:block;font-weight:400;font-size:.46em;color:var(--muted);margin-top:10px;line-height:1.5}
+.tq-ask{font:600 clamp(17px,2.2vw,21px)/1.6 var(--sans);color:var(--cli);margin:22px 0 10px}
+.tq-ask .em{border-bottom:2px solid var(--edge)}
+.tq-sub{color:var(--ink2);max-width:716px;margin:0}
+main>section{padding:46px 0 6px;border-bottom:1px solid var(--line2);scroll-margin-top:14px}
+main>section:last-of-type{border-bottom:0}
+.tq-tag{display:inline-block;font:600 11px/1.6 var(--mono);letter-spacing:.1em;color:var(--muted);margin:0 0 6px}
+.tq-tag .side{padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:700}
+.tq-tag .side.cli{background:var(--cli-s);color:var(--cli)}
+.tq-tag .side.wrk{background:var(--wrk-s);color:var(--wrk)}
+.tq-tag .side.edge{background:var(--edge-s);color:var(--edge)}
+.tq-tag .side.both{background:#EDEAF3;color:var(--ink2)}
+main h2{font:700 clamp(20px,2.7vw,26px)/1.32 var(--sans);margin:0 0 12px;letter-spacing:-.006em}
+main h3{font:650 17px/1.5 var(--sans);margin:26px 0 8px}
+main h4{font:650 15px/1.5 var(--sans);margin:18px 0 6px}
+.tq-lead{font-size:16.8px;color:var(--ink2);max-width:716px;margin:8px 0 22px}
+main p{margin:0 0 14px}
+main a{color:var(--cli)}
+main ul,main ol{margin:0 0 14px;padding-left:24px}
+main li{margin:0 0 6px}
+code,kbd{font:.87em/1.5 var(--mono);background:#EBE8F2;padding:1px 5px;border-radius:3px;word-break:break-word}
+b,strong{font-weight:650}
+.tq-out{margin:22px 0 0;padding:13px 16px;background:var(--ok-s);border-left:3px solid var(--ok);border-radius:0 var(--r) var(--r) 0}
+.tq-lb{display:block;font:600 10.5px/1.6 var(--mono);letter-spacing:.12em;text-transform:uppercase;margin-bottom:3px}
+.tq-out .tq-lb{color:var(--ok)}
+
+/* ══════════ 4 共享组件 ══════════ */
+.tq-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);margin:20px 0}
+.tq-card>.hd{padding:10px 16px;border-bottom:1px solid var(--line2);font:600 13px/1.5 var(--sans);
+  display:flex;align-items:center;gap:8px}
+.tq-card>.hd .pin{width:8px;height:8px;border-radius:2px;background:var(--cli)}
+.tq-card>.bd{padding:14px 16px}
+.tq-cap{font-size:13.5px;color:var(--muted);line-height:1.7;margin:8px 0 0}
+.tq-fig{margin:20px 0}
+
+.tq-key{margin:18px 0;padding:13px 16px;background:var(--cli-s);border-left:3px solid var(--cli);border-radius:0 var(--r) var(--r) 0}
+.tq-key .tq-lb{color:var(--cli)}
+.tq-wrk{margin:18px 0;padding:13px 16px;background:var(--wrk-s);border-left:3px solid var(--wrk);border-radius:0 var(--r) var(--r) 0}
+.tq-wrk .tq-lb{color:var(--wrk)}
+.tq-bad{margin:18px 0;padding:13px 16px;background:var(--edge-s);border-left:3px solid var(--edge);border-radius:0 var(--r) var(--r) 0}
+.tq-bad .tq-lb{color:var(--edge)}
+.tq-side-note{margin:16px 0;padding:12px 15px;background:#EFEDF5;border:1px solid var(--line2);border-radius:var(--r);font-size:14.5px;color:var(--ink2)}
+.tq-side-note .tq-lb{color:var(--muted)}
+
+/* 基础知识：读者未必写过分布式任务队列，术语首现处就地展开 */
+.tq-abc{margin:16px 0;border:1px dashed var(--line);border-radius:var(--r);background:var(--card)}
+.tq-abc>summary{cursor:pointer;padding:9px 14px;font:650 13.5px/1.5 var(--sans);color:var(--cli);list-style:none}
+.tq-abc>summary::-webkit-details-marker{display:none}
+.tq-abc>summary::before{content:"＋ 名词补充　";font-family:var(--mono);color:var(--muted);font-weight:400}
+.tq-abc[open]>summary::before{content:"－ 名词补充　"}
+.tq-abc>div{padding:0 14px 12px;font-size:14.5px;color:var(--ink2)}
+
+.tq-g2,.tq-g3{display:grid;gap:12px;margin:18px 0}
+.tq-g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tq-g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.tq-g2>*,.tq-g3>*{min-width:0}
+@media(max-width:700px){.tq-g2,.tq-g3{grid-template-columns:minmax(0,1fr)}}
+
+.tq-x{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+.tq-x table{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}
+.tq-x th,.tq-x td{border:1px solid var(--line2);padding:8px 11px;text-align:left;vertical-align:top}
+.tq-x th{background:#EDEAF3;font-weight:650;white-space:nowrap}
+.tq-x td code{background:transparent;padding:0}
+
+/* 代码块：真实代码与伪代码共用，伪代码用 .pseudo 标出来 */
+.tq-code{background:#221E33;color:#DDD8EC;border-radius:var(--r);padding:12px 0;margin:16px 0;
+  font:13px/1.75 var(--mono);overflow-x:auto}
+.tq-code .ln{display:grid;grid-template-columns:36px minmax(0,1fr);gap:10px;padding-right:14px;white-space:pre}
+.tq-code .ln>.n{color:#A49CC6;text-align:right;user-select:none;padding-left:10px}
+.tq-code .ln.hl{background:#332C4C}
+.tq-code .ln.hl>.n{color:#B9A6F5}
+.tq-code.pseudo{background:#1F2430;color:#D9E0EC}
+.tq-code.pseudo .ln>.n{color:#99A5BC}
+.tq-code.pseudo .ln.hl{background:#2C3444}
+.tq-codecap{font:600 12px/1.6 var(--mono);color:var(--muted);margin:16px 0 -10px;display:flex;gap:8px;align-items:center}
+.tq-codecap .badge{padding:1px 7px;border-radius:8px;font-weight:700}
+.tq-codecap .badge.real{background:var(--ok-s);color:var(--ok)}
+.tq-codecap .badge.pseudo{background:#E3E8F0;color:#3F4A5C}
+
+.tq-ctl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:14px 0}
+.tq-fl{font:13.5px/1.6 var(--mono);color:var(--ink2);display:flex;align-items:center;gap:8px}
+.tq-rd{font:650 13.5px/1.6 var(--mono);color:var(--cli)}
+.tq-b{font:13.5px/1 var(--sans);padding:8px 14px;border:1px solid var(--line);background:var(--card);
+  color:var(--ink2);border-radius:var(--r);cursor:pointer}
+.tq-b:hover{border-color:var(--cli);color:var(--cli)}
+.tq-b[aria-pressed="true"]{background:var(--cli);border-color:var(--cli);color:#fff}
+.tq-sl{-webkit-appearance:none;appearance:none;height:3px;background:var(--line);border-radius:2px;
+  outline:none;max-width:220px;flex:1 1 140px}
+.tq-sl::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--cli);cursor:pointer}
+.tq-sl::-moz-range-thumb{width:15px;height:15px;border:0;border-radius:50%;background:var(--cli);cursor:pointer}
+
+/* 按钮多时必须能换行：8 个分段按钮在 360px 下会把版心撑到 509px */
+.tq-seg{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;max-width:100%}
+.tq-seg button{font:13px/1 var(--sans);padding:8px 13px;border:0;background:var(--card);color:var(--ink2);
+  cursor:pointer;flex:0 1 auto;min-width:0}
+.tq-seg button[aria-pressed="true"]{background:var(--cli);color:#fff}
+.tq-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:18px 0 0;overflow-x:auto}
+.tq-tab{font:13px/1 var(--sans);padding:9px 14px;border:0;background:transparent;color:var(--muted);
+  cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tq-tab[aria-selected="true"]{color:var(--cli);border-bottom-color:var(--cli);font-weight:650}
+.tq-tabbody{padding:14px 0 0}
+.tq-steps{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0}
+.tq-steps button{font:12.5px/1 var(--mono);padding:7px 11px;border:1px solid var(--line);background:var(--card);
+  color:var(--ink2);border-radius:var(--r);cursor:pointer}
+.tq-steps button[aria-pressed="true"]{background:var(--wrk);border-color:var(--wrk);color:#fff}
+
+.tq-qz{margin:18px 0;padding:15px 17px;background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.tq-qz .q{font-weight:650;margin:0 0 10px}
+.tq-qz .opt{display:block;width:100%;text-align:left;font:14px/1.55 var(--sans);padding:9px 12px;margin:6px 0;
+  border:1px solid var(--line);background:#fff;color:var(--ink2);border-radius:var(--r);cursor:pointer;
+  overflow-wrap:anywhere}
+.tq-qz .opt:hover{border-color:var(--cli)}
+.tq-qz .opt.ok{border-color:var(--ok);background:var(--ok-s);color:var(--ink)}
+.tq-qz .opt.no{border-color:var(--edge);background:var(--edge-s);color:var(--ink)}
+.tq-qz .opt .mk{font-family:var(--mono);font-weight:700}
+.tq-qz .opt.ok .mk{color:var(--ok)}
+.tq-qz .opt.no .mk{color:var(--edge)}
+.tq-qz .why{font-size:14px;color:var(--ink2);margin:10px 0 0;padding-top:10px;border-top:1px solid var(--line2);
+  overflow-wrap:anywhere}
+.tq-qz .why:empty{display:none;margin:0;padding:0;border:0}
+
+.tq-end{padding:40px 0 0;color:var(--muted);font-size:14px}
+.tq-top{display:inline-block;margin-top:12px;font:13px/1.6 var(--mono);color:var(--cli)}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important}
+}
+
+</style>
+
+<a class="tq-skip" href="#question">跳到正文</a>
+<div class="tq-prog" id="tq-prog" aria-hidden="true"></div>
+
+<div class="tq-shell">
+<nav class="tq-side" aria-label="消息旅程导航">
+  <p class="tq-nav-hd">消息的一次旅程</p>
+  <p class="tq-nav-lg">
+    <span><i style="background:var(--cli)"></i>客户端侧</span>
+    <span><i style="background:var(--edge)"></i>边界</span>
+    <span><i style="background:var(--wrk)"></i>worker 侧</span>
+  </p>
+  <ul class="tq-nav" id="tq-nav"></ul>
+</nav>
+
+<main class="tq-main" id="tq-main">
+
+<header class="tq-hero">
+  <h1>一文读懂 taskiq<span class="lt">kiq 之后，你的函数并没有被调用</span></h1>
+  <p class="tq-ask">写下 <code>await send_mail.kiq(user_id)</code>，<span class="em">这一行到底做了什么</span>？</p>
+  <p class="tq-sub">它没有执行 <code>send_mail</code>。它把这次调用<b>打包成了一条 JSON 消息</b>，扔进队列就返回了。真正执行发生在另一个进程、可能另一台机器上。这条边界一旦划下，taskiq 后面所有的设计——参数为什么不能传数据库连接、worker 为什么会「找不到任务」、结果为什么需要单独一个后端、依赖注入为什么存在——都是它的直接后果。本文沿这条因果链走一遍，每处机制都配一段伪代码说明它在做什么，再对上真实 API。</p>
+  <div id="tq-hero-map"></div>
+</header>
+
+<details class="tq-mini">
+  <summary>目录</summary>
+  <ol id="tq-mini-list"></ol>
+</details>
+
+<section id="question">
+<span class="tq-tag">[ 01 · 起点 <span class="side both">两侧</span> ]</span>
+<h2>一行 .kiq()，到底做了什么</h2>
+<p class="tq-lead">先看一段能跑的代码。三个文件，加起来不到二十行——本文后面所有内容，都是在解释这二十行背后发生的事。</p>
+
+<h3>最小可验证例子</h3>
+
+<div id="tq-a-mini"></div>
+
+<p>三步跑起来：</p>
+<div id="tq-a-run"></div>
+
+<h3>注意 <code>.kiq()</code> 返回的那一刻</h3>
+<p>如果 <code>send_mail</code> 是个普通函数，<code>await send_mail(1)</code> 会一直等到它执行完。但 <code>.kiq(1)</code> 不是——它<b>立刻就返回了</b>，而这时候 worker 那边可能还没开始干活，甚至 worker 根本没启动。</p>
+<p>返回给你的也不是函数的返回值，而是一个 <code>AsyncTaskiqTask</code> 对象——一张<b>取货凭据</b>。想拿真正的结果，还得再拿着它去问一次。</p>
+
+<div class="tq-key">
+<span class="tq-lb">这一行做的三件事</span>
+<b>一、</b>把「调用哪个函数、用什么参数」打包成一条消息。<b>二、</b>把这条消息扔进队列（broker）。<b>三、</b>返回一张凭据，凭据上只有一个 <code>task_id</code>。
+<b>它自始至终没有执行你的函数。</b>
+</div>
+
+<h3>本文讲什么、不讲什么</h3>
+<p><b>taskiq</b> 是 Python 的异步分布式任务队列。名字念作 task-i-q，你可以理解成 task queue 的一个变体写法。它和 Celery 解决同一类问题，区别是它<b>原生基于 asyncio</b>——任务本身就是 <code>async def</code>，broker 的收发也是异步的。</p>
+<p>本文只走一条主线：<b>一次调用如何跨过进程边界，又如何把结果带回来。</b>沿这条线，会依次碰到参数序列化、任务命名、类型还原、broker、结果后端、依赖注入、中间件、消息确认、worker 进程模型、定时调度、配置取舍。</p>
+<p>不讲的：具体某个 broker 的运维（RabbitMQ 怎么配集群之类）、Celery 的迁移细节、以及 taskiq 各插件的完整 API 清单。主干走通了，这些自己查文档就够了。</p>
+
+<div class="tq-abc"><summary>什么是「任务队列」</summary><div>
+<p>一句话：<b>把「现在要做的事」写成一张纸条，扔进一个筐里，让另一批进程从筐里拿纸条干活。</b></p>
+<p>为什么需要它？典型场景是一个 Web 接口：用户点了「注册」，你要发确认邮件。发邮件可能耗时 3 秒还可能失败重试——如果在接口里同步做，用户就得干等 3 秒。把它变成一张纸条扔进筐，接口立刻返回，邮件慢慢发。</p>
+<p>那个「筐」就是 <b>broker（消息中间件）</b>，通常是 Redis 或 RabbitMQ。从筐里拿纸条干活的进程叫 <b>worker</b>。</p>
+</div></div>
+
+<div class="tq-bad">
+<span class="tq-lb">先破一个直觉</span>
+很多人第一次用会以为 <code>.kiq()</code> 是「在后台线程里跑这个函数」。<b>不是。</b>它甚至不要求那个函数在当前进程里能跑得起来——它只是发了一条消息出去。函数在哪执行、什么时候执行、能不能执行，取决于队列另一头有没有人在听。
+</div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>「打包成消息扔出去」这句话听起来平淡，但它划下了一条边界。下一节把这条边界的真身摆出来——那条消息长什么样，以及为什么它一旦成型，后面所有设计就都被决定了。</div>
+</section>
+
+<section id="boundary">
+<span class="tq-tag">[ 02 · 第一因 <span class="side edge">边界</span> ]</span>
+<h2>第一因：那条消息长什么样</h2>
+<p class="tq-lead">整篇文章只有一个第一因，就是这一节。后面十三节，全是它的后果。</p>
+
+<div class="tq-key">
+<span class="tq-lb">第一因</span>
+<code>.kiq()</code> 把一次函数调用<b>压成了一条 JSON 消息</b>。压得进去的东西才能过去，压不进去的东西——数据库连接、打开的文件、内存里的对象——<b>一律过不去</b>。
+这条边界叫<b>序列化边界</b>。taskiq 后面的每一个设计，都是在回答「边界两侧各自该怎么办」。
+</div>
+
+<h3>消息的真身</h3>
+<p>taskiq 内部用一个 pydantic 模型描述这条消息。它一共只有六个字段：</p>
+
+<div id="tq-b-msg"></div>
+
+<p>看清楚它<b>没有</b>什么：没有你的函数对象，没有闭包，没有 <code>self</code>，没有任何进程内的引用。只有<b>一个名字</b>和<b>一堆能写成 JSON 的值</b>。</p>
+
+<div class="tq-abc"><summary>什么是「序列化」</summary><div>
+<p><b>序列化（serialize）</b>：把内存里的对象变成一串可以存盘、可以走网络的字节。<b>反序列化</b>是反过来。</p>
+<p>为什么内存对象不能直接发走？因为内存里的东西大多是<b>指针</b>——一个数据库连接对象里存的是「第 7 号 socket 文件描述符」，这个编号只在当前进程有意义。发到另一台机器上，7 号描述符指向的是完全不相干的东西，甚至根本不存在。</p>
+<p>所以跨进程传递只能传<b>值</b>，不能传<b>引用</b>。JSON 就是一种最常见的「只装得下值」的格式。</p>
+</div></div>
+
+<h3>用伪代码看清 kiq 做了什么</h3>
+<p>先看一段为讲解写的伪代码。它不是 taskiq 的源码，但每一步都对得上：</p>
+
+<div id="tq-b-pseudo"></div>
+
+<p>然后是真实源码，来自 <code>taskiq/kicker.py</code>。对照着看，结构完全一致：</p>
+
+<div id="tq-b-real"></div>
+
+<h3>亲手试一下：什么能过去，什么过不去</h3>
+<p>下面这个演示模拟 <code>_prepare_arg</code> + JSON 序列化这两步。选一个参数类型，看它能不能过边界、过去之后变成了什么：</p>
+
+<div class="tq-card">
+  <div class="hd"><span class="pin"></span><b>序列化边界检查台</b></div>
+  <div class="bd">
+    <div id="tq-b-pick"></div>
+    <div class="tq-g2" style="margin-top:14px">
+      <div>
+        <h4>客户端侧：你传进去的</h4>
+        <div id="tq-b-in"></div>
+      </div>
+      <div>
+        <h4>worker 侧：它收到的</h4>
+        <div id="tq-b-out"></div>
+      </div>
+    </div>
+    <p class="tq-cap" id="tq-b-verdict" role="status"></p>
+    <p class="tq-cap">这是按 taskiq 的 <code>_prepare_arg</code> 规则 + JSON 编码在页面里重演的结果，<b>不是真的跑了一次 taskiq</b>。结论与真实行为一致，但没有联网、也没有 broker。</p>
+  </div>
+</div>
+
+<div class="tq-bad">
+<span class="tq-lb">一个真实项目里的细节</span>
+在实际代码里经常能看到这样一行：<code>await run_job.kiq(str(attempt_id))</code>。
+为什么要 <code>str(...)</code>？因为 <code>attempt_id</code> 是个 <code>UUID</code> 对象，<b>JSON 里没有 UUID 这个类型</b>。不转成字符串，序列化这一步就会失败。
+这种 <code>str()</code> 出现在 <code>.kiq()</code> 的参数里时，几乎都是在过这条边界，不是随手写的。
+</div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>边界的形状定下来了：只能过<b>值</b>，而且是能写成 JSON 的值。下一节把参数这件事讲透——哪些类型 taskiq 会替你转，哪些它会当场报错，哪些能过去但会变形。</div>
+</section>
+
+<section id="args">
+<span class="tq-tag">[ 03 · 参数 <span class="side cli">客户端侧</span> ]</span>
+<h2>参数怎么过界：三条规则</h2>
+<p class="tq-lead">上一节的检查台已经把结论摆出来了。这一节把规则说清楚，并解释一件容易忽略的事——<b>有些类型能过去，但过去之后就不是原来那个东西了</b>。</p>
+
+<h3>规则一：taskiq 会替你摊平两种东西</h3>
+<p>在打包之前，每个参数都会先过一遍 <code>_prepare_arg</code>。它只做两件事：</p>
+<div id="tq-c-prep"></div>
+<p>翻译过来：<b>pydantic 模型和 dataclass 会被摊平成 dict</b>，其余原样放行。注意最后那句 <code>raise</code>——如果你传的是<b>类型本身</b>（比如把 <code>User</code> 这个类而不是它的实例传进去），taskiq 会当场报错，而不是等到 JSON 编码时才失败。</p>
+
+<h3>规则二：摊平是单向的，形状会丢</h3>
+<p>这是最容易踩的一处。<code>User(id=1, name="a")</code> 过界之后变成 <code>{"id": 1, "name": "a"}</code>——<b>它已经不是 User 了。</b></p>
+<p>worker 侧的函数如果写成 <code>async def f(u: User)</code>，还能拿回 <code>User</code> 吗？<b>能</b>，但那是另一个机制在起作用（第 05 节的类型还原），不是这一步。<b>如果参数没写类型标注，你收到的就是一个裸 dict。</b></p>
+
+<div class="tq-bad">
+<span class="tq-lb">由此产生的一个真实 bug</span>
+函数签名写成 <code>async def f(u)</code>（没标类型），本地直接调用时 <code>u.name</code> 正常；换成 <code>.kiq()</code> 之后 worker 里 <code>u.name</code> 抛 <code>AttributeError</code>——因为此刻 <code>u</code> 是个 dict，只能 <code>u["name"]</code>。
+本地调用和远程调用行为不一致，根源就在这条边界上。<b>写全类型标注能避免绝大多数这类问题。</b>
+</div>
+
+<h3>规则三：过不去的东西，不要想办法「塞过去」</h3>
+<p>数据库连接、HTTP client、文件句柄、锁——这些都过不去，而且<b>不该过去</b>。</p>
+<p>原因不是 taskiq 不支持，而是这类对象的本质就是「指向本进程某个资源的引用」。硬要序列化它（比如自己 pickle 一下），到了 worker 那边也只是一个指向<b>不存在的东西</b>的空壳。</p>
+<p>正确的做法是：<b>只传标识，让 worker 自己去取。</b></p>
+
+<div id="tq-c-idiom"></div>
+
+<p>「传 id 不传对象」这条习惯，在任何跨进程场景里都成立，不是 taskiq 特有的。</p>
+
+<div class="tq-side-note"><span class="tq-lb">那 worker 侧怎么拿到连接</span>它自己建一个，并且在多个任务之间复用。这件事有专门的机制承担——依赖注入，见第 08 节。这里先记住结论：<b>连接由 worker 侧负责，不由消息携带。</b></div>
+
+<div id="tq-c-quiz"></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>参数怎么过去说清楚了。但消息里还有一个字段没讲：<code>task_name</code>。worker 收到一个字符串，它是怎么找到该调用哪个函数的？——这是「worker 找不到任务」这个高频报错的全部答案。</div>
+</section>
+
+<section id="naming">
+<span class="tq-tag">[ 04 · 寻址 <span class="side both">两侧</span> ]</span>
+<h2>worker 靠一个字符串找到你的函数</h2>
+<p class="tq-lead">消息里没有函数对象，只有 <code>task_name</code> 这个字符串。worker 拿到它之后要在自己进程里找出对应的函数——找得到就执行，找不到就<b>丢掉这条消息，只打一行 warning</b>。这一节讲清楚这个名字从哪来、为什么会对不上。</p>
+
+<h3>名字默认是「模块路径 : 函数名」</h3>
+<div id="tq-d-name"></div>
+<p>所以 <code>app/tasks/jobs.py</code> 里的 <code>send_mail</code>，默认名字就是 <code>app.tasks.jobs:send_mail</code>。</p>
+
+<div class="tq-key">
+<span class="tq-lb">对上名字需要两个条件同时成立</span>
+<b>一、</b>worker 进程<b>导入过</b>那个模块——没导入，注册表里就没有这个名字。
+<b>二、</b>客户端和 worker 算出来的<b>模块路径完全一致</b>——同一个文件，从不同的工作目录导入，路径可能不一样。
+</div>
+
+<h3>「找不到任务」是怎么发生的</h3>
+<p>看 worker 侧的真实代码，它对找不到的处理相当克制：</p>
+<div id="tq-d-notfound"></div>
+<p><b>注意它没有抛异常，也没有重试，只是 return。</b>消息被消费掉了，任务没跑，你的 <code>wait_result()</code> 会一直等到超时。</p>
+<p>日志里那句 <code>Maybe you forgot to import it?</code> 说的就是条件一。</p>
+
+<h3>四种常见的对不上</h3>
+<div id="tq-d-cases"></div>
+
+<h3>两个务实的做法</h3>
+<p><b>一、显式命名。</b>不依赖模块路径，直接把名字钉死：</p>
+<div id="tq-d-explicit"></div>
+<p>这样即使以后重构目录、移动文件，名字也不变——<b>队列里可能还躺着用旧名字发的消息</b>，显式命名能让重构不至于打断正在处理的任务。</p>
+<p><b>二、让 worker 明确知道去哪找任务。</b>worker 默认会按 <code>**/tasks.py</code> 这个模式去扫描文件（<code>--tasks-pattern</code>），也可以直接在 broker 模块里 import 一遍所有任务模块，保证注册表是全的。</p>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>worker 找到函数了，手里还有一堆从 JSON 里读出来的原始值——<code>{"id": 1}</code> 这样的 dict。它怎么变回函数签名要求的那个类型？下一节讲类型还原，那是 taskiq 一个容易被忽略但很实用的机制。</div>
+</section>
+
+<section id="parsing">
+<span class="tq-tag">[ 05 · 还原 <span class="side wrk">worker 侧</span> ]</span>
+<h2>类型标注在 worker 侧被真的用上了</h2>
+<p class="tq-lead">在大多数 Python 代码里，类型标注只是给人和静态检查工具看的，运行时不起作用。taskiq 是个例外——<b>它拿你的类型标注去把 JSON 里的值转回来</b>。这一节讲清楚它怎么转、什么时候转不动。</p>
+
+<h3>先看现象</h3>
+<div id="tq-e-demo"></div>
+<p>你传的是字符串 <code>"11"</code>，worker 里拿到的是整数 <code>11</code>。中间没有任何人写转换代码——是 <code>parse_params</code> 读了 <code>a: int</code> 这个标注，自己转的。</p>
+
+<h3>它是怎么做的</h3>
+<div id="tq-e-pseudo"></div>
+<p>关键在最后那句 <b>转不动就原样留着</b>。这是一个刻意的设计：它<b>不会因为类型对不上就让任务失败</b>，只打一行 warning，然后把原值交给你的函数。</p>
+
+<div class="tq-key">
+<span class="tq-lb">这解释了两件事</span>
+<b>一、</b>pydantic 模型能「变回来」。第 03 节说过 <code>User</code> 过界后变成 dict——但只要函数签名写着 <code>u: User</code>，这一步就会用这个标注把 dict 重新解析成 <code>User</code> 实例。<b>形状是靠标注补回来的，不是消息里带回来的。</b>
+<b>二、</b>没写标注就没有这一步。参数标成 <code>Any</code> 或者干脆不标，你拿到的就是 JSON 里的原始形状。
+</div>
+
+<h3>什么时候会转不动</h3>
+<div id="tq-e-fail"></div>
+
+<div class="tq-side-note"><span class="tq-lb">想彻底关掉它</span>worker 启动时加 <code>--no-parse</code>，所有参数原样交给函数。适合你自己已经做了严格校验、不希望多一层隐式转换的场景。</div>
+
+<h3>为什么这个设计值得留意</h3>
+<p>它让「跨进程调用」在写法上尽量贴近「本地调用」——你照常写 <code>async def f(u: User)</code>，不用在函数开头手动 <code>User(**payload)</code>。</p>
+<p>代价是多了一层<b>隐式行为</b>：类型转换在你看不见的地方发生，失败时只有 warning。所以真正重要的校验不要指望它——它是便利，不是保障。</p>
+
+<div id="tq-e-quiz"></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>从字节到一次真实的函数调用，这条路走完了。接下来往回看基础设施：那个「队列」到底是什么，换成不同的 broker 有什么区别。</div>
+</section>
+
+<section id="broker">
+<span class="tq-tag">[ 06 · broker <span class="side edge">边界</span> ]</span>
+<h2>broker：那个筐长什么样</h2>
+<p class="tq-lead">broker 是消息落地的地方，也是客户端和 worker 唯一的接触点。它的接口小得出奇——本质上只有两个动作。</p>
+
+<h3>broker 只需要会两件事</h3>
+<div id="tq-f-abc"></div>
+<p><code>kick</code> 把字节扔进去，<code>listen</code> 是个异步生成器，源源不断吐出字节。<b>其余全是实现细节。</b>正因为接口这么窄，换 broker 才是一行代码的事。</p>
+
+<h3>常见的几种，以及它们的真实差别</h3>
+<div id="tq-f-table"></div>
+
+<div class="tq-key">
+<span class="tq-lb">选型的第一个问题不是「哪个快」</span>
+是<b>「这条消息丢了要不要紧」</b>。
+不要紧（比如刷新缓存、打点统计）→ 简单的队列就够。
+要紧（扣款、发货、生成报告）→ 必须选一个<b>支持确认机制</b>的，也就是「worker 说处理完了，消息才真正从队列里消失」。这件事第 10 节展开。
+</div>
+
+<h3>InMemoryBroker：不要在生产用，但测试离不开它</h3>
+<p>taskiq 自带一个 <code>InMemoryBroker</code>。它根本没有队列——<code>kiq()</code> 直接在当前进程里把函数跑了。</p>
+<div id="tq-f-inmem"></div>
+<p>这在<b>写测试</b>时非常有用：不用起 Redis、不用起 worker，<code>await task.wait_result()</code> 立刻就有结果。</p>
+<p>但它也会掩盖问题：<b>因为根本没过序列化边界</b>，那些「传了不能序列化的对象」的 bug，在 InMemoryBroker 下全都测不出来，一上真 broker 就炸。测试里最好至少有一条用例走真实 broker。</p>
+
+<div class="tq-abc"><summary>Redis 的 List 和 Stream 有什么不同</summary><div>
+<p><b>List</b> 是最朴素的队列：<code>LPUSH</code> 塞进去，<code>BRPOP</code> 取出来。取出来的那一刻，消息就从 Redis 里没了——worker 中途崩溃，这条消息也跟着没了。</p>
+<p><b>Stream</b> 多了一个「消费组」的概念：消息取走之后仍然留在 Stream 里，标记为「已投递、待确认」。worker 处理完显式确认（ACK），它才算真正完成；worker 崩了没确认，这条消息可以被重新投递给别人。</p>
+<p>代价是 Stream 要额外管理消费组、要处理「待确认」堆积，运维上比 List 复杂。<b>选哪个，回到上面那个问题：这条消息丢了要不要紧。</b></p>
+</div></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>消息发得出去了。但 <code>.kiq()</code> 返回的只是一张凭据——结果是怎么从 worker 那边传回来的？下一节讲结果后端，以及一个很多人第一次就会撞上的坑。</div>
+</section>
+
+<section id="result">
+<span class="tq-tag">[ 07 · 结果 <span class="side both">两侧</span> ]</span>
+<h2>结果不走原路回来</h2>
+<p class="tq-lead">这是新手最容易撞的一处：<b>队列是单向的。</b>消息能过去，返回值回不来——它要走另一条道，那条道叫 result backend。</p>
+
+<h3>为什么不能原路返回</h3>
+<p>想想那个筐。你往筐里扔了一张纸条就走了，worker 过了三十秒才拿到、又花了五秒办完。这时候它拿着结果，要交给谁？<b>你早就不在那儿了</b>——发起调用的那个 HTTP 请求可能已经返回，那个协程可能已经结束。</p>
+<p>所以结果只能<b>存到一个双方都能访问的地方</b>，由你事后凭 <code>task_id</code> 去取。这个地方就是 <b>result backend</b>，通常也是 Redis。</p>
+
+<div id="tq-g-flow"></div>
+
+<h3>凭据与取件</h3>
+<div id="tq-g-task"></div>
+<p><code>wait_result()</code> 不是「被通知」，而是<b>轮询</b>——每隔一小段时间去问一次 result backend「好了没」。看源码：</p>
+<div id="tq-g-wait"></div>
+<p>默认间隔是 <code id="tq-g-ci"></code> 秒。这意味着两件事：<b>结果最快也要等到下一次轮询</b>；以及 <b><code>timeout</code> 默认是 −1，即永远等下去</b>——生产代码里几乎总该显式传一个超时。</p>
+
+<h3>拿回来的是什么</h3>
+<div id="tq-g-model"></div>
+<p>注意 <code>is_err</code>：<b>任务里抛的异常不会在你这边重新抛出来</b>，而是被打包进结果对象。想让它抛，得自己判断 <code>is_err</code> 或者用 <code>result.raise_for_error()</code> 这类方式处理。</p>
+
+<div class="tq-bad">
+<span class="tq-lb">最常见的三个坑</span>
+<b>一、没配 result backend 就调 wait_result()。</b>默认的后端不存结果，你会一直等到超时。
+<b>二、把 wait_result() 写在 Web 接口里同步等。</b>那就等于把异步又变回了同步，还多了一趟网络——如果非要等，为什么要用队列？
+<b>三、结果不会永远留着。</b>Redis 后端通常配了过期时间，过期之后 <code>task_id</code> 就查不到东西了。要长期保存，写你自己的数据库。
+</div>
+
+<div class="tq-side-note"><span class="tq-lb">那什么时候该等</span>「立刻要给用户一个答复」的场景本来就不适合用队列。队列适合的是：<b>发出去就不管了</b>（fire and forget），或者<b>过一会儿再回来查</b>（前端轮询一个状态接口）。真正需要「等」的地方，往往说明这件事根本不该异步化。</div>
+
+<div id="tq-g-quiz"></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>去和回的路都通了。现在回到第 03 节留下的那个悬念：数据库连接过不去，worker 侧到底怎么拿到它？</div>
+</section>
+
+<section id="depends">
+<span class="tq-tag">[ 08 · 依赖注入 <span class="side wrk">worker 侧</span> ]</span>
+<h2>过不去的东西，在那边现造</h2>
+<p class="tq-lead">数据库连接不能过边界，但任务又确实要用它。taskiq 的答案很直接：<b>别传，让 worker 侧自己造。</b>造的时机、复用、清理，交给一套依赖注入机制管——写法和 FastAPI 几乎一样。</p>
+
+<h3>先看它长什么样</h3>
+<div id="tq-h-basic"></div>
+<p>注意 <code>db</code> 这个参数：<b>调用方从来不传它。</b><code>await process.kiq(42)</code> 只传了 <code>user_id</code>。<code>db</code> 是 worker 在执行前自己求出来的。</p>
+
+<h3>它凭什么知道该造什么</h3>
+<p>worker 在注册任务时，会先把函数签名扫一遍，把所有 <code>TaskiqDepends</code> 标记的参数挑出来，建一张<b>依赖图</b>：</p>
+<div id="tq-h-graph"></div>
+<p>依赖可以嵌套——一个依赖函数自己也能声明依赖。图会被拓扑排序，先算底层再算上层，<b>同一次任务执行里，同一个依赖只会被求值一次</b>（结果被缓存复用）。</p>
+
+<h3>用生成器管理「用完要收拾」的资源</h3>
+<p>连接这类东西不只是「造出来」，还得「用完关掉」。写成生成器就行：</p>
+<div id="tq-h-yield"></div>
+<p><code>yield</code> 之前是准备，之后是清理。任务执行完（无论成功还是抛异常），<code>finally</code> 都会跑。这和 FastAPI 的依赖写法是同一套心智。</p>
+
+<div class="tq-key">
+<span class="tq-lb">这一节和第一因的关系</span>
+依赖注入不是「一个方便的特性」，它是<b>序列化边界的直接产物</b>。
+边界只让值过去 → 连接类对象过不去 → 但任务需要它 → 所以必须有一个「在 worker 侧按需构造」的机制。
+反过来看也成立：<b>凡是你想 <code>.kiq()</code> 却传不过去的东西，八成都该改成依赖。</b>
+</div>
+
+<h3>三种资源，三种放法</h3>
+<div id="tq-h-where"></div>
+
+<div class="tq-abc"><summary>为什么不用全局变量就好了</summary><div>
+<p>直接写个模块级全局变量当连接池，也能跑。但有三个问题：</p>
+<p><b>一、测试难替换。</b>依赖可以在测试里被整体替换成假的，全局变量得靠 monkeypatch。</p>
+<p><b>二、生命周期不明确。</b>全局变量什么时候建、什么时候关、异常时要不要回滚，都得你自己写。依赖用 <code>yield</code> 把这件事表达清楚了。</p>
+<p><b>三、每个任务的独立性。</b>数据库会话通常应该「一个任务一个」，用完就关；全局共享一个 session 会带来事务串味的问题。</p>
+<p>全局变量适合的是<b>真正全局且无状态</b>的东西，比如一个 HTTP client 连接池——那种情况可以放在 worker 启动事件里初始化，见下一节。</p>
+</div></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>任务执行需要的一切都齐了。接下来看一类横切的东西：重试、日志、埋点这些「每个任务都要做一遍」的逻辑，该挂在哪。</div>
+</section>
+
+<section id="middleware">
+<span class="tq-tag">[ 09 · 中间件 <span class="side both">两侧</span> ]</span>
+<h2>八个钩子，分别长在哪一侧</h2>
+<p class="tq-lead">重试、日志、埋点、链路追踪——这些「每个任务都要做一遍」的事，写进每个任务函数里就重复了。taskiq 把它们抽成中间件，一共八个钩子。<b>理解它们的关键不是记住名字，是搞清楚每个钩子跑在边界的哪一侧。</b></p>
+
+<h3>八个钩子的位置</h3>
+<div id="tq-i-hooks"></div>
+<p class="tq-cap">点任意一个钩子，看它在什么时刻、在哪一侧被调用，以及适合在里面做什么。</p>
+
+<div class="tq-key">
+<span class="tq-lb">一条分界线</span>
+<code>pre_send</code> / <code>post_send</code> 跑在<b>客户端进程</b>里——是发消息的那一侧。
+<code>pre_execute</code> / <code>post_execute</code> / <code>post_save</code> / <code>on_error</code> 跑在<b>worker 进程</b>里。
+<code>startup</code> / <code>shutdown</code> <b>两侧都会跑</b>，靠事件类型区分是哪一侧。
+<b>写中间件时先问自己：这段代码需要访问的东西，在这一侧存在吗？</b>
+</div>
+
+<h3>一个具体例子：重试</h3>
+<p>「失败了自动重试」这件事必须发生在 worker 侧——因为只有那边才知道执行失败了。taskiq 自带的重试中间件就挂在 <code>on_error</code> 上：</p>
+<div id="tq-i-retry"></div>
+<p>它的做法很朴素：<b>捕获异常 → 把重试次数记在 labels 里 → 重新 kiq 一遍。</b>所以重试在队列层面是<b>一条全新的消息</b>，不是同一条消息被「放回去」。</p>
+
+<div class="tq-bad">
+<span class="tq-lb">由此推出的两个后果</span>
+<b>一、重试会换一个 task_id。</b>如果你在用 <code>task_id</code> 做业务幂等键，重试会绕过它。
+<b>二、重试次数存在 labels 里，也就是存在消息里。</b>消息一旦被丢弃（比如队列没有持久化、broker 重启），计数也一起没了。
+</div>
+
+<h3>labels：挂在消息上的小标签</h3>
+<p>上面说的「重试次数记在 labels 里」，用的就是消息结构里那个 <code>labels</code> 字段。它是中间件之间传递信息的通道：</p>
+<div id="tq-i-labels"></div>
+<p>labels 会跟着消息一起过边界，所以它<b>同样受序列化边界约束</b>——只能放简单的值。</p>
+
+<h3>startup / shutdown：worker 级别的初始化</h3>
+<p>上一节末尾提到的「真正全局的资源」放这里：</p>
+<div id="tq-i-events"></div>
+<p><code>state</code> 是一个 worker 进程内共享的容器，任务里可以通过依赖拿到它。<b>注意 <code>WORKER_STARTUP</code> 只在 worker 侧触发</b>；客户端进程调 <code>broker.startup()</code> 触发的是 <code>CLIENT_STARTUP</code>。</p>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>横切逻辑挂哪说清楚了。现在剩最后一个关于可靠性的问题：一条消息什么时候算「处理完了」——这个时机选错，要么丢任务，要么重复执行。</div>
+</section>
+
+<section id="ack">
+<span class="tq-tag">[ 10 · 确认 <span class="side wrk">worker 侧</span> ]</span>
+<h2>什么时候说「这条我处理完了」</h2>
+<p class="tq-lead">worker 从队列取走一条消息之后，要在某个时刻告诉 broker「这条可以删了」。这个动作叫 <b>ack（确认）</b>。什么时候 ack，直接决定了系统在崩溃时是<b>丢任务</b>还是<b>重复执行</b>——这是任务队列里最经典的一个取舍。</p>
+
+<h3>先想清楚：为什么需要确认这个动作</h3>
+<p>假设没有确认——消息一被取走就从队列删除。worker 取走了、正在跑，这时候进程被 kill 了。<b>这条消息已经不在队列里，也没有人在处理它。它消失了。</b></p>
+<p>所以要有一个「暂存」状态：取走但未确认。worker 崩了，broker 发现这条消息迟迟没被确认，就重新投递给别人。</p>
+
+<div class="tq-abc"><summary>at-least-once 与 at-most-once</summary><div>
+<p>这是分布式系统里的一对基础概念：</p>
+<p><b>at-most-once（至多一次）</b>：宁可丢，不可重。取走就删，崩了就没了。</p>
+<p><b>at-least-once（至少一次）</b>：宁可重，不可丢。处理完才删，崩了就重投——可能造成同一个任务被执行两次。</p>
+<p>还有个 <b>exactly-once（恰好一次）</b>，在跨进程场景里<b>做不到</b>（严格说是代价极高且需要业务配合）。实践中的做法是：选 at-least-once，然后<b>把任务写成幂等的</b>——执行两次和执行一次结果相同。</p>
+</div></div>
+
+<h3>taskiq 给了三个时机</h3>
+<div id="tq-j-times"></div>
+
+<p>默认值是 <code id="tq-j-def"></code>。这是三者里最保守的：<b>连结果都存好了才确认</b>。</p>
+
+<h3>用时间轴看清差别</h3>
+<p>拖动「崩溃发生的时刻」，看三种设置各自会发生什么：</p>
+<div class="tq-card">
+  <div class="hd"><span class="pin"></span><b>崩溃时刻 → 三种 ack 策略的后果</b></div>
+  <div class="bd">
+    <div class="tq-ctl">
+      <label class="tq-fl" for="tq-j-t">崩溃发生在</label>
+      <input id="tq-j-t" class="tq-sl" type="range" min="0" max="3" step="1" value="1" aria-label="崩溃发生的阶段，0 到 3">
+      <span class="tq-rd" id="tq-j-trd"></span>
+    </div>
+    <div id="tq-j-tl"></div>
+    <div id="tq-j-out" role="status"></div>
+    <p class="tq-cap">这是按三种 ack 时机的语义在页面上推演的结果，<b>不是真的跑了一次崩溃演练</b>。结论与实现一致，但没有连接任何 broker。</p>
+  </div>
+</div>
+
+<div class="tq-key">
+<span class="tq-lb">怎么选</span>
+默认的 <code>WHEN_SAVED</code> 适合绝大多数场景，代价是<b>崩溃后可能重复执行</b>。
+只有当「重复执行的代价 &gt; 丢一条的代价」时，才考虑 <code>WHEN_RECEIVED</code>——比如纯粹的埋点上报。
+<b>无论选哪个，把任务写成幂等的，都是比调这个参数更划算的投资。</b>
+</div>
+
+<h3>幂等具体怎么写</h3>
+<div id="tq-j-idem"></div>
+<p>核心是：<b>用一个业务上唯一的键，先占位再执行。</b>占不到说明已经有人在做或做过了，直接返回。这个键最好来自业务本身（订单号、attempt_id），不要用 <code>task_id</code>——上一节说过，重试会换一个新的 task_id。</p>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>单条消息的完整生命周期讲完了。放大一层看：worker 进程本身是怎么组织的，它同时能跑多少任务？</div>
+</section>
+
+<section id="worker">
+<span class="tq-tag">[ 11 · worker <span class="side wrk">worker 侧</span> ]</span>
+<h2>worker 的两层并发</h2>
+<p class="tq-lead"><code>taskiq worker broker:broker</code> 这一条命令，起的其实不止一个进程。搞清楚它的并发模型，才知道「我能同时跑多少任务」这个问题该怎么算。</p>
+
+<h3>两层，别混在一起</h3>
+<div id="tq-k-model"></div>
+
+<p><b>第一层是进程。</b><code>--workers</code> 决定 fork 出几个子进程，默认 <code id="tq-k-w"></code> 个。它们各自独立、互不共享内存，靠这个吃满多核。</p>
+<p><b>第二层是协程。</b>每个子进程内部跑一个 asyncio 事件循环，<code>--max-async-tasks</code> 决定这个循环里最多同时有几个任务在飞，默认 <code id="tq-k-a"></code>。</p>
+
+<div class="tq-key">
+<span class="tq-lb">同时在跑的任务数</span>
+理论上限 = <code>--workers</code> × <code>--max-async-tasks</code>。默认就是 <span id="tq-k-total"></span> 个。
+但这个数<b>只对 I/O 密集的任务有意义</b>——协程并发的前提是任务大部分时间在 <code>await</code>（等数据库、等 HTTP）。
+</div>
+
+<h3>为什么 CPU 密集的任务会毁掉这个模型</h3>
+<p>asyncio 的并发是<b>协作式</b>的：一个协程只有在 <code>await</code> 的时候才交出控制权。如果你的任务里有一段纯 CPU 计算（图像处理、大量 JSON 解析、加密），那段时间它<b>不会 await</b>，整个事件循环就卡在那里——同进程里另外 99 个任务全都动不了。</p>
+<div id="tq-k-cpu"></div>
+<p>taskiq 对同步函数有专门处理：<b>如果你的任务是普通 <code>def</code> 而不是 <code>async def</code>，它会被丢到线程池里跑</b>，不阻塞事件循环。所以遇到 CPU 密集或者只有同步 API 可用的场景，<b>写成同步函数反而是对的</b>。</p>
+<p>更重的计算可以用 <code>--use-process-pool</code> 走进程池。</p>
+
+<div class="tq-abc"><summary>协作式并发 vs 抢占式</summary><div>
+<p><b>抢占式</b>（操作系统的线程）：跑到一半会被系统强行打断，让别的线程上。你不需要做任何配合。</p>
+<p><b>协作式</b>（asyncio 的协程）：只有你主动 <code>await</code> 才会让出。好处是切换开销极小、没有锁的烦恼；坏处是<b>一个不让出的协程能饿死所有人</b>。</p>
+<p>所以「asyncio 很快」有个前提：任务是 I/O 密集的。纯计算场景下它不但不快，还会因为阻塞事件循环而更糟。</p>
+</div></div>
+
+<h3>几个和稳定性直接相关的开关</h3>
+<div id="tq-k-flags"></div>
+
+<h3>prefetch：一把抓多少条</h3>
+<p><code>--max-prefetch</code> 控制 worker 一次从队列预取多少消息。预取多了吞吐更高（少几次网络往返），但<b>被预取的消息实际上已经离开队列、握在这个 worker 手里</b>——它崩了，这些消息要等超时重投；而且别的空闲 worker 也拿不到它们，负载会不均。</p>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>worker 怎么跑清楚了。还剩一类任务没讲：不是被谁调用，而是<b>到点自己跑</b>的。</div>
+</section>
+
+<section id="scheduler">
+<span class="tq-tag">[ 12 · 调度 <span class="side cli">客户端侧</span> ]</span>
+<h2>调度器只干一件事：到点替你 kiq</h2>
+<p class="tq-lead">「每天凌晨三点跑一次对账」这类需求，taskiq 用一个独立的进程解决。它的实现比你想的简单得多——<b>看懂它做的是什么，很多关于定时任务的困惑会一起消失。</b></p>
+
+<h3>它的全部逻辑</h3>
+<div id="tq-l-pseudo"></div>
+<p>就这些。<b>调度器不执行任何任务</b>，它只是一个「按时间表按下 kiq 按钮」的机器人。任务照样进队列、照样由 worker 执行。</p>
+
+<h3>源码里那一句</h3>
+<div id="tq-l-real"></div>
+<p>可以看到它确确实实就是构造了一个 kicker 然后 <code>.kiq()</code>——和你在业务代码里手写的调用走的是同一条路。</p>
+
+<div class="tq-key">
+<span class="tq-lb">这个设计带来三个直接后果</span>
+<b>一、调度器和 worker 是两个进程</b>，要分别启动：<code>taskiq scheduler</code> 和 <code>taskiq worker</code>。只起 worker，定时任务永远不会触发。
+<b>二、调度器不能多开。</b>起两个调度器，同一个时间点就会 kiq 两次——定时任务被执行两遍。
+<b>三、定时任务的所有约束和普通任务完全一样。</b>参数照样要过序列化边界，找不到任务照样静默跳过。
+</div>
+
+<h3>时间表从哪来</h3>
+<p>调度器每秒去问一遍「有没有到点的」，问的对象叫 <b>schedule source</b>。常见两种：</p>
+<div id="tq-l-sources"></div>
+
+<div class="tq-side-note"><span class="tq-lb">为什么每秒轮询一次</span>源码里是 <code>_sleep_until_next_second()</code>——它对齐到整秒再检查。这意味着<b>调度精度是秒级</b>，而且实际触发时间总会比理论时间晚一点点（还要加上队列排队和 worker 空闲的等待）。<b>不要用它做毫秒级的定时。</b></div>
+
+<h3>一个容易忽略的运维问题</h3>
+<div class="tq-bad">
+<span class="tq-lb">调度器停机期间错过的任务，不会补跑</span>
+调度器的逻辑是「现在这一秒到点了吗」。如果它在凌晨 2:50 挂了、5:00 才拉起来，那么 3:00 那次对账<b>就是没跑</b>，没有任何补偿机制。
+需要「一定要跑到」的任务，得自己做记账：任务开始时记一笔，另有一个巡检去发现「今天该跑的还没跑」。
+</div>
+
+<div id="tq-l-quiz"></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>机制全部讲完了。接下来把这些零件拼成实际能用的配置，并说清楚每个选择在换什么。</div>
+</section>
+
+<section id="config">
+<span class="tq-tag">[ 13 · 配置 <span class="side both">两侧</span> ]</span>
+<h2>把零件拼起来：三套配置与它们在换什么</h2>
+<p class="tq-lead">前面十二节讲的每个机制，最后都会落成配置里的一行。这一节不给「推荐值」——给的是<b>每个选择在拿什么换什么</b>，以及三套能直接抄的起点。</p>
+
+<h3>三套典型配置</h3>
+<div id="tq-m-tabs"></div>
+
+<h3>决策链：从需求倒推配置</h3>
+<p>按顺序回答四个问题，配置基本就定了：</p>
+<div id="tq-m-tree"></div>
+
+<h3>和 FastAPI 一起用</h3>
+<p>最常见的组合。要点只有两个：</p>
+<div id="tq-m-fastapi"></div>
+<p><b>一、只在 API 进程里 <code>startup()</code>，不要 <code>listen()</code>。</b>API 进程是发消息的一侧，它不消费队列。</p>
+<p><b>二、任务模块要被 import 到。</b>API 侧需要 import 才能拿到 <code>.kiq()</code>；worker 侧需要 import 才能注册进任务表（第 04 节）。这两件事经常被忘掉一个。</p>
+
+<div class="tq-side-note"><span class="tq-lb">测试怎么写</span>把 broker 换成 <code>InMemoryBroker</code>，任务就变成同进程直接执行，<code>wait_result()</code> 立刻返回。但记住第 06 节的提醒：<b>这条路径不过序列化边界</b>，所以至少要留一条用例走真实 broker，否则「传了不能序列化的对象」这类 bug 测不出来。</div>
+
+<h3>一张参数速查</h3>
+<div id="tq-m-params"></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>配置落地了。最后两节：先把常见的错误说法逐条掰开，再把整条链路压成一张能回查的表。</div>
+</section>
+
+<section id="pitfalls">
+<span class="tq-tag">[ 14 · 误区 <span class="side both">两侧</span> ]</span>
+<h2>八句常见说法，逐条掰开</h2>
+<p class="tq-lead">下面每一条单看都不算离谱，只是对了一半，或者把原因归到了错的地方。第二列说的是<b>为什么</b>，不是简单判对错。</p>
+
+<div id="tq-n-table"></div>
+
+<h3>一个排障顺序</h3>
+<p>任务「没跑」时，按这个顺序查，能避免把不同层的问题混在一起：</p>
+<div id="tq-n-tree"></div>
+
+<h3>自测</h3>
+<p>每题考的是「这个改动会导致什么」，不考名词记忆。干扰项都来自上面表格里真实出现过的误解。</p>
+<div id="tq-n-quiz"></div>
+
+<div class="tq-out"><span class="tq-lb">本节收束</span>误区清完了。最后一节把十四节压成一张表，外加三句最该记住的话。</div>
+</section>
+
+<section id="recap">
+<span class="tq-tag">[ 15 · 回顾 <span class="side both">两侧</span> ]</span>
+<h2>一条消息的一生，压成一张表</h2>
+<p class="tq-lead">这一节不讲新东西，只是把前面十四节收拢成能反复回查的形式。</p>
+
+<h3>如果只记三句话</h3>
+<ol>
+<li><b><code>.kiq()</code> 不调用函数，它把这次调用压成一条 JSON 消息发走。</b>压得进 JSON 的才能过去，连接、句柄、对象都过不去。</li>
+<li><b>worker 靠一个字符串找函数，靠类型标注还原参数。</b>名字对不上就静默跳过；没写标注就拿到裸 dict。</li>
+<li><b>结果不走原路回来。</b>它存在 result backend 里，你凭 <code>task_id</code> 轮询去取——没配后端就永远等不到。</li>
+</ol>
+
+<h3>全链路总表</h3>
+<div id="tq-o-table"></div>
+
+<h3>这条链路怎么迁移到别处</h3>
+<p>本文讲的是 taskiq，但那条序列化边界是<b>所有跨进程任务系统共有的</b>。换成 Celery、RQ、Sidekiq、甚至你自己用 Redis 手搓一个，下面这些问题一个都躲不掉：</p>
+<div id="tq-o-transfer"></div>
+<p>各家的答案不同（Celery 默认用 pickle 因此能传更多类型，代价是安全风险和跨语言不可用），但<b>问题清单是一样的</b>。拿到一个陌生的任务队列，照着这张清单问一遍，很快就能摸清它的性格。</p>
+
+<h3>这篇没讲的</h3>
+<div id="tq-o-gaps"></div>
+
+<div class="tq-out"><span class="tq-lb">全文收束</span><code>await send_mail.kiq(user_id)</code> 这一行，现在应该不再是一个黑盒了：它打包了一条消息、扔进了一个筐、拿回了一张凭据。剩下的所有复杂性——依赖注入、中间件、确认时机、进程模型——都是在回答同一个问题：<b>边界两侧各自该怎么办。</b></div>
+</section>
+
+
+
+<section id="tq-end-sec" aria-label="结尾">
+  <p class="tq-end">全文的 API 与默认值来自本机 taskiq 0.12.4 / taskiq-redis 1.1.2 / taskiq-dependencies 1.5.7 的源码，伪代码为讲解所写、已逐处标注。<a class="tq-top" href="#question">回到开头 ↑</a></p>
+</section>
+
+</main>
+</div>
+
+<script>
+/* ══════════ 共享命名空间 TQ ══════════ */
+window.TQ = (function () {
+  var TQ = {};
+
+  TQ.$ = function (s, r) { return (r || document).querySelector(s); };
+  TQ.$$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  TQ.el = function (tag, cls, html) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html != null) n.innerHTML = html;
+    return n;
+  };
+  TQ.clamp = function (v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); };
+  TQ.fmt = function (v, d) { return Number(v).toFixed(d == null ? 2 : d); };
+  TQ.thousands = function (v) { return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ","); };
+  TQ.bytes = function (n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return TQ.fmt(n / 1024, 1) + " KiB";
+    return TQ.fmt(n / 1048576, 2) + " MiB";
+  };
+  TQ.ms = function (v) { return v >= 1000 ? TQ.fmt(v / 1000, 2) + " s" : Math.round(v) + " ms"; };
+
+  /* 领域常量：全篇唯一真源，各节不要再手写这些数字 */
+  TQ.K = {
+    VERSION: "0.12.4",
+    CHECK_INTERVAL: 0.2,      /* AsyncTaskiqTask.wait_result 的轮询间隔，秒 */
+    DEFAULT_WORKERS: 2,       /* taskiq worker --workers */
+    DEFAULT_MAX_ASYNC: 100,   /* --max-async-tasks */
+    DEFAULT_PATTERN: "**/tasks.py",
+    HOOKS: ["startup", "pre_send", "post_send", "pre_execute", "post_execute", "post_save", "on_error", "shutdown"],
+    ACK: ["WHEN_RECEIVED", "WHEN_EXECUTED", "WHEN_SAVED"]
+  };
+
+  TQ.rng = function (seed) {
+    var s = seed >>> 0;
+    return function () { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  };
+
+  var readyFns = [], readyFired = false, lazy = [];
+  TQ.ready = function (fn) { readyFired ? fn() : readyFns.push(fn); };
+  TQ.onVisible = function (el, fn) { lazy.push([el, fn]); };
+  TQ.reduced = function () { return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; };
+  TQ.__flushReady = function () { readyFired = true; while (readyFns.length) readyFns.shift()(); };
+  TQ.__lazy = function () { return lazy; };
+
+  var uidN = 0;
+  TQ.uid = function () { uidN += 1; return "tq-u" + uidN; };
+
+  /* 代码块。kind: "real" = 源码原文，"pseudo" = 为讲解写的伪代码，必须标出来 */
+  TQ.code = function (host, opts) {
+    var o = opts || {}, hl = {}, lines = o.lines || [];
+    (o.highlight || []).forEach(function (n) { hl[n] = true; });
+    if (o.caption != null) {
+      var cap = TQ.el("div", "tq-codecap");
+      var badge = TQ.el("span", "badge " + (o.kind === "pseudo" ? "pseudo" : "real"));
+      badge.textContent = o.kind === "pseudo" ? "伪代码" : "源码";
+      var t = TQ.el("span");
+      t.textContent = o.caption;
+      cap.appendChild(badge); cap.appendChild(t);
+      host.appendChild(cap);
+    }
+    var box = TQ.el("div", "tq-code" + (o.kind === "pseudo" ? " pseudo" : ""));
+    lines.forEach(function (text, i) {
+      var row = TQ.el("div", "ln" + (hl[i + 1] ? " hl" : ""));
+      var num = TQ.el("span", "n"); num.textContent = String(i + 1);
+      var src = TQ.el("span"); src.textContent = text;
+      row.appendChild(num); row.appendChild(src);
+      box.appendChild(row);
+    });
+    host.appendChild(box);
+    return box;
+  };
+
+  TQ.seg = function (host, items, onPick, initial) {
+    var box = TQ.el("div", "tq-seg"), btns = [];
+    items.forEach(function (item, i) {
+      var b = TQ.el("button"); b.type = "button"; b.textContent = item.label;
+      b.setAttribute("aria-pressed", String(i === (initial || 0)));
+      b.addEventListener("click", function () {
+        btns.forEach(function (x, j) { x.setAttribute("aria-pressed", String(i === j)); });
+        onPick(item.value, i);
+      });
+      btns.push(b); box.appendChild(b);
+    });
+    host.appendChild(box);
+    return { root: box, buttons: btns };
+  };
+
+  TQ.tabs = function (host, items, render, label) {
+    var bar = TQ.el("div", "tq-tabs"), body = TQ.el("div", "tq-tabbody"), tabs = [], id = TQ.uid();
+    bar.setAttribute("role", "tablist");
+    bar.setAttribute("aria-label", label || "内容分组");
+    items.forEach(function (item, i) {
+      var t = TQ.el("button", "tq-tab"); t.type = "button"; t.textContent = item.label;
+      t.setAttribute("role", "tab"); t.id = id + "-t" + i;
+      t.setAttribute("aria-controls", id + "-p");
+      t.setAttribute("aria-selected", String(i === 0));
+      t.tabIndex = i === 0 ? 0 : -1;
+      t.addEventListener("click", function () { pick(i); });
+      t.addEventListener("keydown", function (e) {
+        if (e.key === "Home") { e.preventDefault(); pick(0, true); return; }
+        if (e.key === "End") { e.preventDefault(); pick(items.length - 1, true); return; }
+        var d = e.key === "ArrowRight" ? 1 : (e.key === "ArrowLeft" ? -1 : 0);
+        if (!d) return;
+        e.preventDefault(); pick((i + d + items.length) % items.length, true);
+      });
+      tabs.push(t); bar.appendChild(t);
+    });
+    body.id = id + "-p"; body.setAttribute("role", "tabpanel");
+    function pick(i, focus) {
+      tabs.forEach(function (t, j) {
+        t.setAttribute("aria-selected", String(i === j));
+        t.tabIndex = i === j ? 0 : -1;
+      });
+      body.setAttribute("aria-labelledby", id + "-t" + i);
+      body.innerHTML = ""; render(items[i].value, body, i);
+      if (focus) tabs[i].focus();
+    }
+    host.appendChild(bar); host.appendChild(body); pick(0);
+    return { pick: pick };
+  };
+
+  TQ.stepper = function (host, labels, render) {
+    var bar = TQ.el("div", "tq-steps"), body = TQ.el("div"), btns = [];
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "步骤切换");
+    labels.forEach(function (label, i) {
+      var b = TQ.el("button"); b.type = "button"; b.textContent = label;
+      b.setAttribute("aria-pressed", String(i === 0));
+      b.addEventListener("click", function () { pick(i); });
+      btns.push(b); bar.appendChild(b);
+    });
+    body.setAttribute("role", "status");
+    function pick(i) {
+      btns.forEach(function (b, j) { b.setAttribute("aria-pressed", String(i === j)); });
+      body.innerHTML = ""; render(i, body);
+    }
+    host.appendChild(bar); host.appendChild(body); pick(0);
+    return { pick: pick };
+  };
+
+  /* 自测：反馈不能只有颜色，读屏用户要能拿到对错和正确答案 */
+  TQ.quiz = function (host, question, options, answerIndex, why) {
+    var box = TQ.el("div", "tq-qz");
+    box.appendChild(TQ.el("p", "q", question));
+    var explain = TQ.el("p", "why");
+    explain.setAttribute("role", "status");
+    var buttons = [];
+    options.forEach(function (text, i) {
+      var b = TQ.el("button", "opt"); b.type = "button";
+      var mark = TQ.el("span", "mk"); mark.setAttribute("aria-hidden", "true");
+      var label = TQ.el("span"); label.textContent = text;
+      b.appendChild(mark); b.appendChild(label);
+      b.addEventListener("click", function () {
+        buttons.forEach(function (x, j) {
+          x.classList.remove("ok", "no");
+          TQ.$(".mk", x).textContent = "";
+          x.setAttribute("aria-label", options[j]);
+        });
+        b.classList.add(i === answerIndex ? "ok" : "no");
+        TQ.$(".mk", b).textContent = i === answerIndex ? "✓ " : "✗ ";
+        b.setAttribute("aria-label", options[i] + (i === answerIndex ? "，你选的这项，正确" : "，你选的这项，错误"));
+        if (i !== answerIndex) {
+          var right = buttons[answerIndex];
+          right.classList.add("ok");
+          TQ.$(".mk", right).textContent = "→ ";
+          right.setAttribute("aria-label", options[answerIndex] + "，这才是正确答案");
+        }
+        explain.textContent = (i === answerIndex ? "回答正确。" : "回答错误。") + why;
+      });
+      buttons.push(b); box.appendChild(b);
+    });
+    box.appendChild(explain);
+    host.appendChild(box);
+  };
+
+  return TQ;
+})();
+
+/* ══════════ 导航、进度、懒初始化 ══════════ */
+(function () {
+  "use strict";
+  /* 每站发生在哪一侧：cli 客户端 / edge 边界 / wrk worker / both 两侧都有 */
+  var SIDES = {
+    question: "both", boundary: "edge", args: "cli", naming: "both", parsing: "wrk",
+    broker: "edge", result: "both", depends: "wrk", middleware: "both", ack: "wrk",
+    worker: "wrk", scheduler: "cli", config: "both", pitfalls: "both", recap: "both"
+  };
+  var SIDE_TXT = { cli: "客户端侧", edge: "边界", wrk: "worker 侧", both: "两侧" };
+
+  function boot() {
+    var secs = TQ.$$("main > section[id]").filter(function (s) { return s.id !== "tq-end-sec"; });
+    var nav = TQ.$("#tq-nav"), mini = TQ.$("#tq-mini-list"), links = [];
+
+    secs.forEach(function (s, i) {
+      var h2 = s.querySelector("h2");
+      var title = h2 ? h2.textContent.trim() : s.id;
+      if (h2) {
+        if (!h2.id) h2.id = s.id + "-h";
+        s.setAttribute("aria-labelledby", h2.id);
+      }
+      s.tabIndex = -1;
+
+      var side = SIDES[s.id] || "both";
+      var a = TQ.el("a");
+      a.href = "#" + s.id;
+      a.setAttribute("data-side", side);
+      a.innerHTML = '<span class="sd" aria-hidden="true"></span><span class="no"></span><span class="tt"></span>';
+      a.querySelector(".no").textContent = String(i + 1).padStart(2, "0");
+      a.querySelector(".tt").textContent = title;
+      a.setAttribute("aria-label", String(i + 1) + " " + title + "，" + SIDE_TXT[side]);
+      var li = TQ.el("li"); li.appendChild(a); nav.appendChild(li); links.push(a);
+
+      var ma = TQ.el("a"); ma.href = "#" + s.id; ma.textContent = title;
+      var mli = TQ.el("li"); mli.appendChild(ma); mini.appendChild(mli);
+    });
+
+    /* 高亮按滚动位置算。IntersectionObserver 在「没有 section 落进激活带」时无人更新，
+       滚到底再回顶部会留下陈旧高亮。 */
+    var prog = TQ.$("#tq-prog");
+    function sync() {
+      var y = window.scrollY || window.pageYOffset;
+      var probe = y + window.innerHeight * 0.28, cur = 0, i;
+      for (i = 0; i < secs.length; i++) if (secs[i].offsetTop <= probe) cur = i;
+      links.forEach(function (a, j) {
+        if (j === cur) a.setAttribute("aria-current", "true");
+        else a.removeAttribute("aria-current");
+      });
+      var max = document.body.scrollHeight - window.innerHeight;
+      prog.style.width = (max > 0 ? TQ.clamp(y / max, 0, 1) * 100 : 0) + "%";
+    }
+    var ticking = false;
+    window.addEventListener("scroll", function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(function () { sync(); ticking = false; });
+    }, { passive: true });
+    window.addEventListener("resize", sync, { passive: true });
+
+    /* 锚点跳转后把焦点显式交给目标 section，读屏的虚拟光标才会跟过去 */
+    document.addEventListener("click", function (e) {
+      var a = e.target.closest && e.target.closest('a[href^="#"]');
+      if (!a) return;
+      var t = document.getElementById(a.getAttribute("href").slice(1));
+      if (!t || t.tagName !== "SECTION") return;
+      window.setTimeout(function () { t.focus({ preventScroll: true }); }, 0);
+    }, true);
+
+    /* 滑杆读数同步进 aria-valuetext；懒加载与页签里后建的滑杆也要覆盖到 */
+    function syncValueText(sl) {
+      var rd = null, sib = sl.nextElementSibling;
+      while (sib && !rd) {
+        if (sib.classList && sib.classList.contains("tq-rd")) rd = sib;
+        else if (sib.tagName === "INPUT" && sib.type === "range") break;
+        else if (sib.querySelector) rd = sib.querySelector(".tq-rd");
+        sib = sib.nextElementSibling;
+      }
+      if (!rd) {
+        var box = sl.closest(".tq-ctl") || sl.parentElement;
+        var all = box ? box.querySelectorAll("input[type=range]") : [];
+        if (all.length <= 1 && box) rd = box.querySelector(".tq-rd");
+      }
+      var txt = rd && rd.textContent.trim();
+      if (txt) sl.setAttribute("aria-valuetext", txt);
+    }
+    function sweepSliders() {
+      TQ.$$("input[type=range]").forEach(function (sl) {
+        if (sl.getAttribute("data-tq-vt") === "1") return;
+        sl.setAttribute("data-tq-vt", "1");
+        syncValueText(sl);
+      });
+    }
+    /* 连续拖动时 live region 会被整块重播，读屏被刷爆。拖动期间挂 aria-busy。 */
+    var busyTimer = null;
+    document.addEventListener("input", function (e) {
+      var t = e.target;
+      if (!t || t.tagName !== "INPUT" || t.type !== "range") return;
+      var scope = t.closest("section") || document.body;
+      var regions = TQ.$$('[aria-live], [role="status"]', scope);
+      regions.forEach(function (r) { r.setAttribute("aria-busy", "true"); });
+      if (busyTimer) window.clearTimeout(busyTimer);
+      busyTimer = window.setTimeout(function () {
+        regions.forEach(function (r) { r.removeAttribute("aria-busy"); });
+      }, 400);
+      window.setTimeout(function () { syncValueText(t); }, 0);
+    }, true);
+
+    /* 宽表与代码块要能用键盘滚，只给真的溢出的加，避免制造无意义的 Tab 站 */
+    function makeScrollersReachable() {
+      TQ.$$(".tq-x, .tq-code").forEach(function (box) {
+        var over = box.scrollWidth > box.clientWidth + 1;
+        if (!over) {
+          if (box.getAttribute("data-tq-reach") === "1") {
+            box.removeAttribute("tabindex"); box.removeAttribute("role");
+            box.removeAttribute("aria-label"); box.removeAttribute("data-tq-reach");
+          }
+          return;
+        }
+        if (box.getAttribute("data-tq-reach") === "1") return;
+        box.tabIndex = 0;
+        box.setAttribute("role", "region");
+        box.setAttribute("aria-label", "可横向滚动" + (box.classList.contains("tq-code") ? "的代码" : "的表格"));
+        box.setAttribute("data-tq-reach", "1");
+      });
+    }
+
+    TQ.__flushReady();
+    var lazyList = TQ.__lazy();
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        io.unobserve(en.target);
+        lazyList.forEach(function (p) { if (p[0] === en.target) p[1](); });
+        window.setTimeout(function () { sweepSliders(); makeScrollersReachable(); }, 0);
+      });
+    }, { rootMargin: "240px 0px" });
+    lazyList.forEach(function (p) { io.observe(p[0]); });
+
+    document.addEventListener("click", function () {
+      window.setTimeout(function () { sweepSliders(); makeScrollersReachable(); }, 0);
+    }, true);
+    window.addEventListener("resize", makeScrollersReachable, { passive: true });
+    window.setTimeout(sweepSliders, 300);
+    makeScrollersReachable();
+    sync();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+/* ════════ 各节的交互实现。全部挂在 TQ 上，不写全局。 ════════ */
+(function () {
+  "use strict";
+
+  /* ── 01 question：最小可验证例子 ── */
+  TQ.ready(function () {
+    var root = document.getElementById("question");
+    if (!root) return;
+
+    TQ.code(TQ.$("#tq-a-mini", root), {
+      kind: "real",
+      caption: "broker.py — 定义 broker 与任务",
+      lines: [
+        "from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend",
+        "",
+        "broker = ListQueueBroker(\"redis://localhost:6379\").with_result_backend(",
+        "    RedisAsyncResultBackend(\"redis://localhost:6379\"),",
+        ")",
+        "",
+        "@broker.task",
+        "async def send_mail(user_id: int) -> str:",
+        "    return f\"sent to {user_id}\"",
+      ],
+      highlight: [7, 8],
+    });
+
+    TQ.code(TQ.$("#tq-a-mini", root), {
+      kind: "real",
+      caption: "client.py — 发起一次调用",
+      lines: [
+        "import asyncio",
+        "from broker import broker, send_mail",
+        "",
+        "async def main() -> None:",
+        "    await broker.startup()",
+        "    task = await send_mail.kiq(1)      # 这里没有执行 send_mail",
+        "    result = await task.wait_result()  # 这里才等到结果",
+        "    print(result.return_value)",
+        "    await broker.shutdown()",
+        "",
+        "asyncio.run(main())",
+      ],
+      highlight: [6, 7],
+    });
+
+    TQ.code(TQ.$("#tq-a-run", root), {
+      kind: "real",
+      caption: "两个终端，各跑一条",
+      lines: [
+        "# 终端 1：启动 worker，让它盯着队列",
+        "taskiq worker broker:broker",
+        "",
+        "# 终端 2：发一条消息",
+        "python client.py",
+      ],
+    });
+  });
+
+  /* ── 02 boundary：消息结构 + 伪代码 + 序列化检查台 ── */
+  TQ.ready(function () {
+    var root = document.getElementById("boundary");
+    if (!root) return;
+
+    TQ.code(TQ.$("#tq-b-msg", root), {
+      kind: "real",
+      caption: "taskiq/message.py — 这就是跨过边界的全部内容",
+      lines: [
+        "class TaskiqMessage(BaseModel):",
+        "    task_id: str                       # 这次调用的唯一编号",
+        "    task_name: str                     # 调哪个函数，一个字符串",
+        "    labels: dict[str, Any]             # 附加标记，见第 09 节",
+        "    labels_types: dict[str, int] | None",
+        "    args: list[Any]                    # 位置参数",
+        "    kwargs: dict[str, Any]             # 关键字参数",
+      ],
+      highlight: [3, 6, 7],
+    });
+
+    TQ.code(TQ.$("#tq-b-pseudo", root), {
+      kind: "pseudo",
+      caption: "kiq 干的事，去掉所有枝节",
+      lines: [
+        "async def kiq(func_name, args, kwargs):",
+        "    # 1. 参数逐个整理成「能写进 JSON 的值」",
+        "    args   = [到JSON能装的形状(a) for a in args]",
+        "    kwargs = {k: 到JSON能装的形状(v) for k, v in kwargs.items()}",
+        "",
+        "    # 2. 拼成一条消息，只有名字和值，没有任何对象",
+        "    msg = { task_id: 生成一个唯一编号(),",
+        "            task_name: func_name,",
+        "            args: args, kwargs: kwargs }",
+        "",
+        "    # 3. 编码成字节，扔进队列。到此为止，函数一次都没被调用",
+        "    await broker.kick( json编码(msg) )",
+        "",
+        "    # 4. 返回一张只有编号的凭据",
+        "    return 取货凭据(task_id=msg.task_id)",
+      ],
+      highlight: [3, 4, 12, 15],
+    });
+
+    TQ.code(TQ.$("#tq-b-real", root), {
+      kind: "real",
+      caption: "taskiq/kicker.py — AsyncKicker.kiq（省略了日志与中间件）",
+      lines: [
+        "async def kiq(self, *args, **kwargs):",
+        "    message = self._prepare_message(*args, **kwargs)",
+        "    # … pre_send 中间件",
+        "    try:",
+        "        await self.broker.kick(self.broker.formatter.dumps(message))",
+        "    except Exception as exc:",
+        "        raise SendTaskError from exc",
+        "    # … post_send 中间件",
+        "    return AsyncTaskiqTask(",
+        "        task_id=message.task_id,",
+        "        result_backend=self.broker.result_backend,",
+        "        return_type=self.return_type,",
+        "    )",
+      ],
+      highlight: [2, 5, 9],
+    });
+
+    /* 序列化检查台 */
+    var CASES = [
+      {
+        label: "int / str", pyIn: "send_mail.kiq(42)",
+        repr: "42", out: "42", ok: true,
+        note: "基本类型直接过。JSON 原生支持。"
+      },
+      {
+        label: "list / dict", pyIn: "kiq({\"ids\": [1, 2, 3]})",
+        repr: "{'ids': [1, 2, 3]}", out: "{\"ids\": [1, 2, 3]}", ok: true,
+        note: "容器只要里面装的也都能过，就能过。"
+      },
+      {
+        label: "pydantic 模型", pyIn: "kiq(User(id=1, name=\"a\"))",
+        repr: "User(id=1, name='a')", out: "{\"id\": 1, \"name\": \"a\"}", ok: true,
+        note: "taskiq 的 _prepare_arg 会先 model_dump() 成 dict。注意：过去之后它是 dict，不再是 User——除非 worker 侧的函数签名标注了类型，见第 05 节。"
+      },
+      {
+        label: "dataclass", pyIn: "kiq(Point(x=1, y=2))",
+        repr: "Point(x=1, y=2)", out: "{\"x\": 1, \"y\": 2}", ok: true,
+        note: "同上，_prepare_arg 会 asdict() 展平。"
+      },
+      {
+        label: "UUID", pyIn: "kiq(uuid4())", repr: "UUID('3f2a…')",
+        out: "✗ 序列化失败", ok: false,
+        note: "JSON 没有 UUID 类型。这就是真实代码里为什么写 kiq(str(attempt_id)) —— 手动转成字符串再过界。"
+      },
+      {
+        label: "datetime", pyIn: "kiq(datetime.now())", repr: "datetime(2026, 9, 10, …)",
+        out: "✗ 序列化失败", ok: false,
+        note: "同理。常见做法是传 ISO 字符串或时间戳，worker 侧再还原。"
+      },
+      {
+        label: "数据库 session", pyIn: "kiq(db_session)", repr: "<AsyncSession object at 0x…>",
+        out: "✗ 根本不该传", ok: false,
+        note: "它内部握着一个 TCP 连接，那个连接只在当前进程有效。正确做法是让 worker 自己建一个——这就是第 08 节依赖注入存在的理由。"
+      },
+      {
+        label: "函数 / 类", pyIn: "kiq(some_func)", repr: "<function some_func at 0x…>",
+        out: "✗ 明确报错", ok: false,
+        note: "taskiq 对「传类型」这件事有一句显式的 raise：Cannot serialize types。"
+      }
+    ];
+
+    var pick = TQ.$("#tq-b-pick", root);
+    var inBox = TQ.$("#tq-b-in", root);
+    var outBox = TQ.$("#tq-b-out", root);
+    var verdict = TQ.$("#tq-b-verdict", root);
+
+    function show(i) {
+      var c = CASES[i];
+      inBox.innerHTML = "";
+      outBox.innerHTML = "";
+      TQ.code(inBox, { lines: [c.pyIn, "", "# 内存里长这样：", "# " + c.repr] });
+      TQ.code(outBox, { lines: ["// 队列里躺着的字节：", c.ok ? '"args": [' + c.out + "]" : c.out] });
+      verdict.textContent = (c.ok ? "能过边界。" : "过不去。") + c.note;
+    }
+    TQ.seg(pick, CASES.map(function (c, i) { return { label: c.label, value: i }; }), show, 0);
+    show(0);
+  });
+})();
+
+/* ════════ 03–06 ════════ */
+(function () {
+  "use strict";
+
+  /* ── 03 args ── */
+  TQ.ready(function () {
+    var root = document.getElementById("args");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-c-prep", root), {
+      kind: "real",
+      caption: "taskiq/kicker.py — _prepare_arg，参数过界前的全部处理",
+      lines: [
+        "def _prepare_arg(cls, arg):",
+        "    if isinstance(arg, BaseModel):        # pydantic 模型",
+        "        arg = model_dump(arg)             # → 摊平成 dict",
+        "    if is_dataclass(arg):",
+        "        if isinstance(arg, type):         # 传的是类本身，不是实例",
+        "            raise ValueError(",
+        "                f\"Cannot serialize types. The {arg} is not serializable.\",",
+        "            )",
+        "        arg = asdict(arg)                 # → 同样摊平成 dict",
+        "    return arg                            # 其余原样放行",
+      ],
+      highlight: [3, 6, 9],
+    });
+    TQ.code(TQ.$("#tq-c-idiom", root), {
+      kind: "real",
+      caption: "传标识，不传对象",
+      lines: [
+        "# ✗ 过不去",
+        "await process_order.kiq(order_obj, db_session)",
+        "",
+        "# ✓ 只传能过界的标识，worker 自己去取",
+        "await process_order.kiq(str(order.id))",
+        "",
+        "@broker.task",
+        "async def process_order(order_id: str, db = TaskiqDepends(get_db)):",
+        "    order = await db.get(Order, order_id)   # worker 侧自己查",
+      ],
+      highlight: [2, 5, 9],
+    });
+    TQ.quiz(TQ.$("#tq-c-quiz", root),
+      "任务签名是 async def f(u)（没写类型标注），调用方 await f.kiq(User(id=1, name=\"a\"))。worker 里 u 是什么？",
+      ["一个 User 实例，和调用方传的一样",
+       "一个 dict：{\"id\": 1, \"name\": \"a\"}",
+       "报错，因为 User 不能序列化",
+       "一个字符串"],
+      1,
+      "_prepare_arg 把 pydantic 模型摊平成了 dict；而把 dict 还原成 User 靠的是函数签名上的类型标注（第 05 节），这里没写标注，所以还原这一步不会发生。此时 u[\"name\"] 可以，u.name 会抛 AttributeError。");
+  });
+
+  /* ── 04 naming ── */
+  TQ.ready(function () {
+    var root = document.getElementById("naming");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-d-name", root), {
+      kind: "real",
+      caption: "taskiq/abc/broker.py — 默认任务名怎么拼出来",
+      lines: [
+        "fmodule = func.__module__",
+        "fname = func.__name__",
+        "inner_task_name = f\"{fmodule}:{fname}\"",
+      ],
+      highlight: [3],
+    });
+    TQ.code(TQ.$("#tq-d-notfound", root), {
+      kind: "real",
+      caption: "taskiq/receiver/receiver.py — 找不到时的处理",
+      lines: [
+        "task = self.broker.find_task(taskiq_msg.task_name)",
+        "if task is None:",
+        "    logger.warning(",
+        "        'task \"%s\" is not found. Maybe you forgot to import it?',",
+        "        taskiq_msg.task_name,",
+        "    )",
+        "    return          # 消息被吃掉，任务不执行，也不重试",
+      ],
+      highlight: [7],
+    });
+    TQ.code(TQ.$("#tq-d-explicit", root), {
+      kind: "real",
+      caption: "显式命名，把名字和文件位置解耦",
+      lines: [
+        "@broker.task(task_name=\"jobs.run_attempt\")",
+        "async def run_job_attempt(attempt_id: str) -> None:",
+        "    ...",
+      ],
+      highlight: [1],
+    });
+
+    var CASES = [
+      { t: "worker 没 import 到那个模块",
+        d: "最常见。broker 模块里没有 import 任务模块，worker 启动后注册表是空的。",
+        f: "在 broker 模块末尾显式 import 一遍任务模块，或用 --tasks-pattern 让它扫描到。" },
+      { t: "客户端和 worker 的工作目录不同",
+        d: "同一个 tasks.py，从项目根导入是 app.tasks:f，从 app/ 目录里导入可能变成 tasks:f。两个名字对不上。",
+        f: "统一用 --app-dir 指定根目录；或者干脆显式命名，绕开模块路径。" },
+      { t: "重构挪了文件",
+        d: "改完部署，队列里还躺着用旧名字发的消息，worker 认不出来，静默丢弃。",
+        f: "显式命名。名字属于协议，不该跟着目录结构变。" },
+      { t: "把 EAS 里那种「服务名」当成了任务名",
+        d: "任务名是「模块:函数」，不是你给这个服务起的名字，两者没关系。",
+        f: "打印一次 broker.available_tasks 的键，照着抄。" }
+    ];
+    var host = TQ.$("#tq-d-cases", root);
+    var wrap = TQ.el("div", "tq-x");
+    var tb = TQ.el("table");
+    tb.innerHTML = "<thead><tr><th>对不上的原因</th><th>为什么</th><th>怎么办</th></tr></thead>";
+    var body = TQ.el("tbody");
+    CASES.forEach(function (c) {
+      var tr = TQ.el("tr");
+      [c.t, c.d, c.f].forEach(function (x) {
+        var td = TQ.el("td"); td.textContent = x; tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); wrap.appendChild(tb); host.appendChild(wrap);
+  });
+
+  /* ── 05 parsing ── */
+  TQ.ready(function () {
+    var root = document.getElementById("parsing");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-e-demo", root), {
+      kind: "real",
+      caption: "taskiq/receiver/params_parser.py 的文档字符串里就写着这个例子",
+      lines: [
+        "@broker.task",
+        "async def my_task(a: int) -> str:",
+        "    return str(a * 2)",
+        "",
+        "await my_task.kiq(\"11\")   # 传的是字符串",
+        "# worker 里 a == 11，是 int",
+      ],
+      highlight: [5, 6],
+    });
+    TQ.code(TQ.$("#tq-e-pseudo", root), {
+      kind: "pseudo",
+      caption: "parse_params 的逻辑",
+      lines: [
+        "for 每个参数名 in 函数签名:",
+        "    标注 = 类型标注.get(参数名)",
+        "    if 标注 is None:",
+        "        continue                    # 没标注就不管",
+        "    值 = 从 message.args 或 message.kwargs 里取出来",
+        "    if 值 is None:",
+        "        continue",
+        "    try:",
+        "        换成标注要求的类型(值)        # pydantic 的 parse_obj_as",
+        "    except (ValueError, RuntimeError):",
+        "        打一行 warning，原值不动     # 关键：不让任务失败",
+      ],
+      highlight: [3, 4, 9, 11],
+    });
+    var fails = [
+      ["标注是 int，值是 \"abc\"", "转不动。打 warning，函数收到字符串 \"abc\"，然后大概率在你自己的代码里炸。"],
+      ["标注是自定义类且没有校验规则", "pydantic 解析不了就放弃，你拿到原始 dict。"],
+      ["参数标成 Any 或不标", "跳过这一步，拿到 JSON 里的原始形状。"],
+      ["worker 启动带了 --no-parse", "整个机制关闭，所有参数原样交给函数。"]
+    ];
+    var host = TQ.$("#tq-e-fail", root);
+    var wrap = TQ.el("div", "tq-x"), tb = TQ.el("table");
+    tb.innerHTML = "<thead><tr><th>情况</th><th>结果</th></tr></thead>";
+    var tbody = TQ.el("tbody");
+    fails.forEach(function (r) {
+      var tr = TQ.el("tr");
+      r.forEach(function (x) { var td = TQ.el("td"); td.textContent = x; tr.appendChild(td); });
+      tbody.appendChild(tr);
+    });
+    tb.appendChild(tbody); wrap.appendChild(tb); host.appendChild(wrap);
+
+    TQ.quiz(TQ.$("#tq-e-quiz", root),
+      "任务是 async def f(n: int)，调用 await f.kiq(\"abc\")。worker 里会发生什么？",
+      ["taskiq 拒收这条消息，任务不执行",
+       "worker 打一行 warning，函数收到字符串 \"abc\"",
+       "自动重试三次后放弃",
+       "n 被转成 0"],
+      1,
+      "parse_params 转换失败时只 log warning、保留原值，不会让任务失败。真正的报错会发生在你的函数体里用 n 做算术的时候——所以类型标注是便利，不是校验。");
+  });
+
+  /* ── 06 broker ── */
+  TQ.ready(function () {
+    var root = document.getElementById("broker");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-f-abc", root), {
+      kind: "pseudo",
+      caption: "broker 的抽象接口，剥到只剩核心",
+      lines: [
+        "class AsyncBroker:",
+        "    async def kick(self, message: BrokerMessage):",
+        "        \"\"\"把这串字节放进队列。\"\"\"",
+        "",
+        "    def listen(self) -> AsyncGenerator[bytes]:",
+        "        \"\"\"源源不断吐出队列里的字节。\"\"\"",
+      ],
+      highlight: [2, 5],
+    });
+    var rows = [
+      ["InMemoryBroker", "同进程直接执行", "无", "只用于测试。不过序列化边界。"],
+      ["ListQueueBroker（Redis List）", "LPUSH / BRPOP", "无", "取走即删。worker 崩了这条就没了。最轻量。"],
+      ["RedisStreamBroker（Redis Stream）", "消费组 + 待确认列表", "有", "崩了能重投。需要管理消费组。"],
+      ["PubSubBroker（Redis Pub/Sub）", "广播", "无", "每个订阅者都收到一份。不是队列语义，别拿来做任务分发。"],
+      ["AioPikaBroker（RabbitMQ）", "AMQP 队列", "有", "路由、优先级、死信队列这些都齐全。运维最重。"],
+      ["NatsBroker", "JetStream", "有", "轻量、延迟低。"]
+    ];
+    var host = TQ.$("#tq-f-table", root);
+    var wrap = TQ.el("div", "tq-x"), tb = TQ.el("table");
+    tb.innerHTML = "<thead><tr><th>broker</th><th>底层怎么放</th><th>确认机制</th><th>要点</th></tr></thead>";
+    var tbody = TQ.el("tbody");
+    rows.forEach(function (r) {
+      var tr = TQ.el("tr");
+      r.forEach(function (x, i) {
+        var td = TQ.el("td");
+        if (i === 0) { var c = TQ.el("code"); c.textContent = x; td.appendChild(c); }
+        else td.textContent = x;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    tb.appendChild(tbody); wrap.appendChild(tb); host.appendChild(wrap);
+
+    TQ.code(TQ.$("#tq-f-inmem", root), {
+      kind: "real",
+      caption: "测试里最常见的替换",
+      lines: [
+        "from taskiq import InMemoryBroker",
+        "",
+        "broker = InMemoryBroker()      # kiq() 就地执行，无队列、无 worker",
+      ],
+      highlight: [3],
+    });
+  });
+})();
+
+/* ════════ 07–10 ════════ */
+(function () {
+  "use strict";
+  var K = TQ.K;
+
+  function table(host, head, rows, codeCol) {
+    var wrap = TQ.el("div", "tq-x"), tb = TQ.el("table");
+    var th = TQ.el("thead"), htr = TQ.el("tr");
+    head.forEach(function (h) { var e = TQ.el("th"); e.textContent = h; htr.appendChild(e); });
+    th.appendChild(htr); tb.appendChild(th);
+    var body = TQ.el("tbody");
+    rows.forEach(function (r) {
+      var tr = TQ.el("tr");
+      r.forEach(function (x, i) {
+        var td = TQ.el("td");
+        if (codeCol != null && i === codeCol) { var c = TQ.el("code"); c.textContent = x; td.appendChild(c); }
+        else td.textContent = x;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); wrap.appendChild(tb); host.appendChild(wrap);
+  }
+
+  /* ── 07 result ── */
+  TQ.ready(function () {
+    var root = document.getElementById("result");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-g-flow", root), {
+      kind: "pseudo",
+      caption: "去和回是两条不同的路",
+      lines: [
+        "客户端 ──kiq()──► [ broker 队列 ] ──listen()──► worker",
+        "                                                  │",
+        "                                             执行你的函数",
+        "                                                  │",
+        "客户端 ◄──凭 task_id 轮询── [ result backend ] ◄──存结果",
+      ],
+      highlight: [1, 5],
+    });
+    TQ.code(TQ.$("#tq-g-task", root), {
+      kind: "real",
+      caption: "kiq 返回的凭据，以及怎么取件",
+      lines: [
+        "task = await send_mail.kiq(1)   # AsyncTaskiqTask，只有 task_id",
+        "print(task.task_id)",
+        "",
+        "await task.is_ready()                       # 问一次：好了没",
+        "res = await task.get_result()               # 取一次，没好会报错",
+        "res = await task.wait_result(timeout=30)    # 轮询直到好，或超时",
+      ],
+      highlight: [1, 6],
+    });
+    TQ.code(TQ.$("#tq-g-wait", root), {
+      kind: "real",
+      caption: "taskiq/task.py — wait_result 就是个轮询循环",
+      lines: [
+        "async def wait_result(self, check_interval: float = 0.2,",
+        "                      timeout: float = -1.0, ...):",
+        "    start_time = time()",
+        "    while not await self.is_ready():",
+        "        if 0 < timeout < time() - start_time:",
+        "            raise TaskiqResultTimeoutError(timeout=timeout)",
+        "        await asyncio.sleep(check_interval)",
+      ],
+      highlight: [4, 5, 7],
+    });
+    var ci = TQ.$("#tq-g-ci", root);
+    if (ci) ci.textContent = String(K.CHECK_INTERVAL);
+    TQ.code(TQ.$("#tq-g-model", root), {
+      kind: "real",
+      caption: "taskiq/result/result.py — TaskiqResult",
+      lines: [
+        "class TaskiqResult(BaseModel, Generic[_ReturnType]):",
+        "    is_err: bool              # 任务是否抛了异常",
+        "    log: str | None           # 捕获到的日志（需开启）",
+        "    return_value: _ReturnType # 返回值；出错时这里是异常信息",
+        "    execution_time: float     # 执行耗时，秒",
+      ],
+      highlight: [2, 4],
+    });
+    TQ.quiz(TQ.$("#tq-g-quiz", root),
+      "只配了 broker、没配 result backend，然后调用 await task.wait_result(timeout=30)。会发生什么？",
+      ["立刻返回 None",
+       "抛异常提示未配置结果后端",
+       "轮询 30 秒后抛 TaskiqResultTimeoutError",
+       "任务根本不会被执行"],
+      2,
+      "任务照常执行——发消息和存结果是两条独立的路。但默认后端不保存结果，is_ready() 永远为假，于是轮询到超时。这也是「任务明明跑了却拿不到结果」的典型现场。");
+  });
+
+  /* ── 08 depends ── */
+  TQ.ready(function () {
+    var root = document.getElementById("depends");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-h-basic", root), {
+      kind: "real",
+      caption: "声明一个依赖",
+      lines: [
+        "from taskiq import TaskiqDepends",
+        "",
+        "async def get_db() -> AsyncSession:",
+        "    return SessionLocal()",
+        "",
+        "@broker.task",
+        "async def process(user_id: int, db = TaskiqDepends(get_db)) -> None:",
+        "    user = await db.get(User, user_id)",
+        "",
+        "await process.kiq(42)      # 只传 user_id，db 不传",
+      ],
+      highlight: [7, 10],
+    });
+    TQ.code(TQ.$("#tq-h-graph", root), {
+      kind: "pseudo",
+      caption: "worker 注册任务时建依赖图，执行时按图求值",
+      lines: [
+        "# 注册阶段（启动时做一次）",
+        "for 每个任务:",
+        "    扫描函数签名，找出所有 TaskiqDepends 参数",
+        "    递归展开它们自己的依赖 → 得到一张有向图",
+        "",
+        "# 执行阶段（每条消息做一次）",
+        "按拓扑序求值，底层先算",
+        "同一个依赖在这一次执行里只求一次，之后复用",
+        "任务结束后，倒序执行各依赖的清理",
+      ],
+      highlight: [3, 8, 9],
+    });
+    TQ.code(TQ.$("#tq-h-yield", root), {
+      kind: "real",
+      caption: "用生成器表达「准备 → 使用 → 清理」",
+      lines: [
+        "async def get_db():",
+        "    session = SessionLocal()",
+        "    try:",
+        "        yield session          # ← 任务拿到的是这个",
+        "    finally:",
+        "        await session.close()  # ← 任务结束后一定会跑",
+      ],
+      highlight: [4, 6],
+    });
+    table(TQ.$("#tq-h-where", root),
+      ["资源", "放哪", "为什么"],
+      [["数据库会话", "依赖（yield 版）", "一个任务一个，用完就关，事务边界清楚。"],
+       ["HTTP client / 连接池", "worker 启动事件 + state", "建立成本高，应该整个进程共享，不该每个任务建一次。"],
+       ["配置、常量", "模块级变量即可", "无状态、无生命周期，不需要任何机制。"]]);
+  });
+
+  /* ── 09 middleware ── */
+  TQ.ready(function () {
+    var root = document.getElementById("middleware");
+    if (!root) return;
+    var HOOKS = [
+      ["startup", "both", "broker 启动时", "两侧都会触发，用 TaskiqEvents 区分是 worker 还是 client。适合建连接池。"],
+      ["pre_send", "cli", "消息发出前", "还能改消息本身——加 label、改参数。在客户端进程里跑。"],
+      ["post_send", "cli", "消息发出后", "记一笔「已投递」。此时任务八成还没开始跑。"],
+      ["pre_execute", "wrk", "worker 拿到消息、执行前", "可以改 message。埋点、注入 trace id 常挂这里。"],
+      ["post_execute", "wrk", "函数执行完", "拿得到结果对象。注意此刻结果还没写进 result backend。"],
+      ["post_save", "wrk", "结果存好之后", "默认的 ack 时机就在这之后。"],
+      ["on_error", "wrk", "函数抛异常时", "重试中间件挂在这里。"],
+      ["shutdown", "both", "broker 关闭时", "对应 startup，关掉你建的东西。"]
+    ];
+    var host = TQ.$("#tq-i-hooks", root);
+    var bar = TQ.el("div", "tq-steps");
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "中间件钩子");
+    var panel = TQ.el("div", "tq-side-note");
+    panel.setAttribute("role", "status");
+    var btns = [];
+    HOOKS.forEach(function (h, i) {
+      var b = TQ.el("button"); b.type = "button"; b.textContent = h[0];
+      b.setAttribute("aria-pressed", String(i === 0));
+      b.setAttribute("aria-label", h[0] + "，" + (h[1] === "cli" ? "客户端侧" : h[1] === "wrk" ? "worker 侧" : "两侧"));
+      b.addEventListener("click", function () { pick(i); });
+      btns.push(b); bar.appendChild(b);
+    });
+    function pick(i) {
+      btns.forEach(function (b, j) { b.setAttribute("aria-pressed", String(i === j)); });
+      var h = HOOKS[i];
+      var side = h[1] === "cli" ? "客户端侧" : h[1] === "wrk" ? "worker 侧" : "两侧都跑";
+      panel.innerHTML = "";
+      var lb = TQ.el("span", "tq-lb"); lb.textContent = h[0] + " · " + side;
+      panel.appendChild(lb);
+      var p1 = TQ.el("p"); p1.textContent = "时机：" + h[2];
+      var p2 = TQ.el("p"); p2.textContent = h[3];
+      p1.style.margin = "0 0 6px"; p2.style.margin = "0";
+      panel.appendChild(p1); panel.appendChild(p2);
+    }
+    host.appendChild(bar); host.appendChild(panel); pick(0);
+
+    TQ.code(TQ.$("#tq-i-retry", root), {
+      kind: "pseudo",
+      caption: "重试中间件的骨架",
+      lines: [
+        "def on_error(self, message, result, exception):",
+        "    已重试次数 = message.labels.get('_retries', 0)",
+        "    上限 = message.labels.get('max_retries', 3)",
+        "    if 已重试次数 >= 上限:",
+        "        return                       # 放弃",
+        "    message.labels['_retries'] = 已重试次数 + 1",
+        "    重新 kiq 一条新消息(带上更新后的 labels)",
+      ],
+      highlight: [6, 7],
+    });
+    TQ.code(TQ.$("#tq-i-labels", root), {
+      kind: "real",
+      caption: "labels 的两种写法",
+      lines: [
+        "@broker.task(retry_on_error=True, max_retries=5)   # 定义时挂",
+        "async def flaky() -> None: ...",
+        "",
+        "await flaky.with_labels(priority=9).kiq()          # 调用时挂",
+      ],
+      highlight: [1, 4],
+    });
+    TQ.code(TQ.$("#tq-i-events", root), {
+      kind: "real",
+      caption: "worker 级别的初始化",
+      lines: [
+        "from taskiq import TaskiqEvents, TaskiqState",
+        "",
+        "@broker.on_event(TaskiqEvents.WORKER_STARTUP)",
+        "async def startup(state: TaskiqState) -> None:",
+        "    state.http = httpx.AsyncClient()",
+        "",
+        "@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)",
+        "async def shutdown(state: TaskiqState) -> None:",
+        "    await state.http.aclose()",
+      ],
+      highlight: [3, 5, 9],
+    });
+  });
+
+  /* ── 10 ack ── */
+  TQ.ready(function () {
+    var root = document.getElementById("ack");
+    if (!root) return;
+    table(TQ.$("#tq-j-times", root),
+      ["取值", "什么时候确认", "崩溃时的后果"],
+      [["WHEN_RECEIVED", "刚从队列取到，还没开始执行", "任务丢失。最激进。"],
+       ["WHEN_EXECUTED", "函数执行完，结果还没存", "结果可能丢，任务不会重跑。"],
+       ["WHEN_SAVED", "结果已写入 result backend（默认）", "可能重复执行。最保守。"]], 0);
+    var def = TQ.$("#tq-j-def", root);
+    if (def) def.textContent = K.ACK[2];
+
+    var STAGES = ["取到消息后、执行前", "执行到一半", "执行完、存结果前", "结果已存好"];
+    var MATRIX = {
+      WHEN_RECEIVED: ["丢了。已确认，队列里没有了，也没人在跑。",
+                      "丢了。同上。", "丢了。同上。", "正常完成。"],
+      WHEN_EXECUTED: ["会重投。未确认，超时后别的 worker 拿到，从头跑一遍。",
+                      "会重投，从头跑一遍。", "会重投。函数其实已经跑完了一次——这里就是重复执行的来源。",
+                      "正常完成。"],
+      WHEN_SAVED:    ["会重投，从头跑一遍。", "会重投，从头跑一遍。",
+                      "会重投。函数跑完了但结果没存，重投后再跑一次。",
+                      "会重投。函数跑完、结果也存了，只差最后一次确认——重投后又跑一次，这是最典型的重复执行。"]
+    };
+    var sl = TQ.$("#tq-j-t", root), rd = TQ.$("#tq-j-trd", root);
+    var tl = TQ.$("#tq-j-tl", root), out = TQ.$("#tq-j-out", root);
+    function render() {
+      var i = Number(sl.value);
+      rd.textContent = STAGES[i];
+      tl.innerHTML = "";
+      var lines = ["队列 ──► 取到消息 ──► 执行函数 ──► 存结果 ──► 确认(ack)"];
+      var caret = ["            ", "               ", "                  ", "                     "];
+      lines.push(caret[i] + "▲ 崩溃发生在这里：" + STAGES[i]);
+      TQ.code(tl, { kind: "pseudo", lines: lines });
+      out.innerHTML = "";
+      K.ACK.forEach(function (mode) {
+        var d = TQ.el("div", mode === "WHEN_SAVED" ? "tq-key" : "tq-wrk");
+        var lb = TQ.el("span", "tq-lb");
+        lb.textContent = mode + (mode === "WHEN_SAVED" ? "（默认）" : "");
+        var p = TQ.el("p");
+        p.textContent = MATRIX[mode][i];
+        p.style.margin = "0";
+        d.appendChild(lb); d.appendChild(p);
+        out.appendChild(d);
+      });
+    }
+    sl.addEventListener("input", render);
+    render();
+
+    TQ.code(TQ.$("#tq-j-idem", root), {
+      kind: "real",
+      caption: "用业务键做幂等占位",
+      lines: [
+        "@broker.task",
+        "async def charge(order_id: str, db = TaskiqDepends(get_db)) -> None:",
+        "    claimed = await try_claim(db, key=f\"charge:{order_id}\")",
+        "    if not claimed:",
+        "        return              # 已经有人做过或正在做，直接返回",
+        "    await do_charge(db, order_id)",
+      ],
+      highlight: [3, 5],
+    });
+  });
+})();
+
+/* ════════ 11–15 ════════ */
+(function () {
+  "use strict";
+  var K = TQ.K;
+
+  function table(host, head, rows, codeCol) {
+    var wrap = TQ.el("div", "tq-x"), tb = TQ.el("table");
+    var th = TQ.el("thead"), htr = TQ.el("tr");
+    head.forEach(function (h) { var e = TQ.el("th"); e.textContent = h; htr.appendChild(e); });
+    th.appendChild(htr); tb.appendChild(th);
+    var body = TQ.el("tbody");
+    rows.forEach(function (r) {
+      var tr = TQ.el("tr");
+      r.forEach(function (x, i) {
+        var td = TQ.el("td");
+        if (codeCol != null && i === codeCol) { var c = TQ.el("code"); c.textContent = x; td.appendChild(c); }
+        else td.textContent = x;
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    tb.appendChild(body); wrap.appendChild(tb); host.appendChild(wrap);
+  }
+
+  /* ── 11 worker ── */
+  TQ.ready(function () {
+    var root = document.getElementById("worker");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-k-model", root), {
+      kind: "pseudo",
+      caption: "taskiq worker 的两层结构",
+      lines: [
+        "taskiq worker broker:broker --workers 2 --max-async-tasks 100",
+        "",
+        "主进程（只负责管孩子，不干活）",
+        "  ├─ 子进程 1 ── 一个事件循环 ── 最多 100 个协程同时在飞",
+        "  └─ 子进程 2 ── 一个事件循环 ── 最多 100 个协程同时在飞",
+      ],
+      highlight: [4, 5],
+    });
+    var w = TQ.$("#tq-k-w", root), a = TQ.$("#tq-k-a", root), t = TQ.$("#tq-k-total", root);
+    if (w) w.textContent = String(K.DEFAULT_WORKERS);
+    if (a) a.textContent = String(K.DEFAULT_MAX_ASYNC);
+    if (t) t.textContent = TQ.thousands(K.DEFAULT_WORKERS * K.DEFAULT_MAX_ASYNC);
+
+    TQ.code(TQ.$("#tq-k-cpu", root), {
+      kind: "real",
+      caption: "同步函数会被丢到线程池，不阻塞事件循环",
+      lines: [
+        "@broker.task",
+        "async def io_bound(url: str) -> int:      # await 期间让出，正确",
+        "    async with httpx.AsyncClient() as c:",
+        "        return (await c.get(url)).status_code",
+        "",
+        "@broker.task",
+        "def cpu_bound(data: bytes) -> str:        # 普通 def → 跑在线程池里",
+        "    return heavy_compute(data)            # 不会卡住事件循环",
+      ],
+      highlight: [7, 8],
+    });
+    table(TQ.$("#tq-k-flags", root),
+      ["参数", "作用", "什么时候需要动"],
+      [["--workers", "子进程数，默认 " + K.DEFAULT_WORKERS, "想吃满多核时按核数调。"],
+       ["--max-async-tasks", "每进程同时在飞的任务数，默认 " + K.DEFAULT_MAX_ASYNC, "下游扛不住时调小，它就是最简单的限流阀。"],
+       ["--max-prefetch", "一次预取多少条消息", "见下文。默认不预取，追吞吐才调大。"],
+       ["--max-tasks-per-child", "跑够多少个任务就重启子进程", "怀疑有内存泄漏时用，属于兜底手段。"],
+       ["--shutdown-timeout", "收到停止信号后等多久", "任务耗时长的话要调大，否则优雅停机会变成强杀。"],
+       ["--reload", "改代码自动重启", "只在本地开发用。"]], 0);
+  });
+
+  /* ── 12 scheduler ── */
+  TQ.ready(function () {
+    var root = document.getElementById("scheduler");
+    if (!root) return;
+    TQ.code(TQ.$("#tq-l-pseudo", root), {
+      kind: "pseudo",
+      caption: "调度器的主循环",
+      lines: [
+        "while True:",
+        "    睡到下一个整秒",
+        "    for source in 所有时间表来源:",
+        "        for 任务 in await source.get_schedules():",
+        "            if 这一秒该跑(任务.cron 或 任务.time):",
+        "                await 那个任务.kiq(*任务.args, **任务.kwargs)",
+      ],
+      highlight: [2, 6],
+    });
+    TQ.code(TQ.$("#tq-l-real", root), {
+      kind: "real",
+      caption: "taskiq/scheduler/scheduler.py — on_ready 的核心",
+      lines: [
+        "await (",
+        "    AsyncKicker(task.task_name, self.broker, task.labels)",
+        "    .with_labels(schedule_id=task.schedule_id)",
+        "    .with_task_id(task_id=task.task_id)",
+        "    .kiq(*task.args, **task.kwargs)",
+        ")",
+      ],
+      highlight: [5],
+    });
+    table(TQ.$("#tq-l-sources", root),
+      ["来源", "时间表存在哪", "特点"],
+      [["LabelScheduleSource", "代码里的装饰器标签", "改时间要改代码、重启调度器。简单、可版本控制。"],
+       ["ListRedisScheduleSource（taskiq-redis）", "Redis", "可以在运行时增删，适合让业务动态排期。"]], 0);
+    TQ.quiz(TQ.$("#tq-l-quiz", root),
+      "为了高可用，把调度器也起了两个实例。会发生什么？",
+      ["自动选主，只有一个生效",
+       "每个定时任务在每个时间点被 kiq 两次，执行两遍",
+       "两个实例各跑一半的任务",
+       "第二个实例启动失败"],
+      1,
+      "taskiq 的调度器没有内置选主。它就是个循环，到点就 kiq。起两个就等于两个机器人同时按按钮。要高可用得自己在外面加锁（比如用 Redis 抢一把分布式锁），或者靠部署层保证只有一个实例。");
+  });
+
+  /* ── 13 config ── */
+  TQ.ready(function () {
+    var root = document.getElementById("config");
+    if (!root) return;
+    var SETUPS = [
+      { label: "本地开发 / 测试", lines: [
+        "from taskiq import InMemoryBroker",
+        "",
+        "broker = InMemoryBroker()",
+        "",
+        "# kiq() 就地执行，不需要 Redis，不需要起 worker",
+        "# 代价：不过序列化边界，测不出「传了不能序列化的东西」",
+      ], note: "换成一行就能跑。但至少要留一条用例走真 broker。" },
+      { label: "小规模生产（消息丢了不要紧）", lines: [
+        "from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend",
+        "",
+        "broker = ListQueueBroker(REDIS_URL).with_result_backend(",
+        "    RedisAsyncResultBackend(REDIS_URL, result_ex_time=3600),",
+        ")",
+        "",
+        "# taskiq worker app.broker:broker --workers 4",
+      ], note: "List 取走即删，worker 崩了这条就没了。适合缓存刷新、通知这类可丢的。注意结果有过期时间。" },
+      { label: "要紧的任务（不能丢）", lines: [
+        "from taskiq_redis import RedisStreamBroker, RedisAsyncResultBackend",
+        "",
+        "broker = RedisStreamBroker(REDIS_URL).with_result_backend(",
+        "    RedisAsyncResultBackend(REDIS_URL),",
+        ")",
+        "",
+        "# 默认 ack 时机是 WHEN_SAVED，崩溃后会重投",
+        "# 所以任务必须写成幂等的（第 10 节）",
+      ], note: "Stream 有确认机制，代价是要管消费组、要盯待确认堆积。选它就等于接受 at-least-once。" }
+    ];
+    TQ.tabs(TQ.$("#tq-m-tabs", root),
+      SETUPS.map(function (s, i) { return { label: s.label, value: i }; }),
+      function (i, body) {
+        TQ.code(body, { kind: "real", lines: SETUPS[i].lines });
+        var p = TQ.el("p", "tq-cap"); p.textContent = SETUPS[i].note;
+        body.appendChild(p);
+      }, "三套配置");
+
+    TQ.code(TQ.$("#tq-m-tree", root), {
+      kind: "pseudo",
+      caption: "四个问题定配置",
+      lines: [
+        "1. 这条消息丢了要紧吗？",
+        "     不要紧 → ListQueueBroker",
+        "     要紧   → RedisStreamBroker / RabbitMQ（有确认机制）",
+        "",
+        "2. 调用方需要拿结果吗？",
+        "     不需要 → 不配 result backend，也别调 wait_result()",
+        "     需要   → 配上，并设过期时间，且总是传 timeout",
+        "",
+        "3. 任务是 I/O 密集还是 CPU 密集？",
+        "     I/O → async def，调大 --max-async-tasks",
+        "     CPU → 普通 def（走线程池），或 --use-process-pool",
+        "",
+        "4. 有定时任务吗？",
+        "     有 → 另起 taskiq scheduler，且只能起一个",
+      ],
+      highlight: [1, 5, 10, 14],
+    });
+    TQ.code(TQ.$("#tq-m-fastapi", root), {
+      kind: "real",
+      caption: "FastAPI 侧只启动、不监听",
+      lines: [
+        "@asynccontextmanager",
+        "async def lifespan(app: FastAPI):",
+        "    if not broker.is_worker_process:",
+        "        await broker.startup()      # 只建连接，不消费队列",
+        "    yield",
+        "    if not broker.is_worker_process:",
+        "        await broker.shutdown()",
+        "",
+        "import app.tasks.jobs             # 必须 import，否则拿不到 .kiq",
+      ],
+      highlight: [3, 4, 9],
+    });
+    table(TQ.$("#tq-m-params", root),
+      ["在哪配", "参数", "决定什么"],
+      [["broker 构造", "with_result_backend(...)", "结果存不存、存多久"],
+       ["@broker.task", "task_name", "消息里那个字符串，见第 04 节"],
+       ["@broker.task", "retry_on_error / max_retries", "失败重试，走 on_error 中间件"],
+       ["调用处", ".with_labels(...)", "给这一次调用挂标签"],
+       ["worker CLI", "--workers / --max-async-tasks", "两层并发，见第 11 节"],
+       ["worker CLI", "--ack-type", "确认时机，见第 10 节"],
+       ["worker CLI", "--no-parse", "关掉类型还原，见第 05 节"],
+       ["scheduler CLI", "（单独进程）", "定时任务，只能起一个"]], 1);
+  });
+
+  /* ── 14 pitfalls ── */
+  TQ.ready(function () {
+    var root = document.getElementById("pitfalls");
+    if (!root) return;
+    table(TQ.$("#tq-n-table", root),
+      ["常见说法", "为什么不对", "准确的说法"],
+      [
+        ["kiq() 会在后台跑这个函数", "它只发了条消息。队列另一头没人听，函数永远不会跑。", "kiq() = 打包 + 投递 + 返回凭据。执行与否取决于 worker。"],
+        ["kiq() 之后任务立刻开始了", "消息要排队，worker 也可能忙着。", "kiq() 返回只说明「投递成功」。"],
+        ["传对象比传 id 方便", "对象里的连接、句柄过不了序列化边界。", "传能过界的标识，让 worker 自己去取。"],
+        ["改了任务代码，正在排队的消息会用新代码", "消息里只有名字和参数，代码在 worker 那边。", "worker 重启后用新代码；但参数结构变了就会对不上老消息。"],
+        ["任务失败了会自动重试", "默认不重试。", "要显式开 retry_on_error，它是中间件行为。"],
+        ["重试是同一条消息重新排队", "重试中间件是重新 kiq 一条新的。", "task_id 会变，别拿它当幂等键。"],
+        ["wait_result() 是被通知的", "它是每 " + K.CHECK_INTERVAL + " 秒轮询一次。", "延迟至少一个轮询间隔；timeout 默认 −1 会永远等。"],
+        ["起两个 scheduler 更保险", "没有选主，会重复触发。", "只起一个；要高可用自己加分布式锁。"]
+      ]);
+    TQ.code(TQ.$("#tq-n-tree", root), {
+      kind: "pseudo",
+      caption: "「任务没跑」的排查顺序",
+      lines: [
+        "1. 消息发出去了吗？",
+        "     去 broker 里看队列长度。没有增长 → 问题在客户端侧。",
+        "",
+        "2. worker 认识这个名字吗？",
+        "     看日志有没有 'is not found. Maybe you forgot to import it?'",
+        "     有 → 第 04 节，import 或显式命名。",
+        "",
+        "3. 任务跑了但报错？",
+        "     看 worker 日志的 traceback。参数类型不对是高频原因（第 05 节）。",
+        "",
+        "4. 跑成功了但拿不到结果？",
+        "     十有八九没配 result backend，或者结果已过期（第 07 节）。",
+      ],
+      highlight: [1, 4, 9, 12],
+    });
+    TQ.quiz(TQ.$("#tq-n-quiz", root),
+      "任务里 raise 了一个异常，调用方 await task.wait_result() 之后会怎样？",
+      ["wait_result() 处会重新抛出那个异常",
+       "拿到一个 TaskiqResult，is_err 为 True，不会自动抛",
+       "wait_result() 一直等到超时",
+       "worker 自动重试直到成功"],
+      1,
+      "异常在 worker 侧被捕获、打包进结果对象存起来。调用方拿到的是一个正常返回的 TaskiqResult，需要自己检查 is_err。默认也没有重试——重试要显式开 retry_on_error。");
+  });
+
+  /* ── 15 recap ── */
+  TQ.ready(function () {
+    var root = document.getElementById("recap");
+    if (!root) return;
+    table(TQ.$("#tq-o-table", root),
+      ["站", "这一步做了什么", "坏了长什么样", "去哪查"],
+      [
+        ["01 起点", "kiq 打包消息、投递、返回凭据", "以为函数跑了，其实没有", "队列长度有没有涨"],
+        ["02 边界", "调用被压成一条 JSON 消息", "序列化报错", "参数里有没有对象"],
+        ["03 参数", "模型摊平成 dict，其余原样", "worker 里 u.name 报 AttributeError", "函数有没有写类型标注"],
+        ["04 寻址", "按 module:func 找函数", "静默丢弃，wait_result 超时", "worker 日志 is not found"],
+        ["05 还原", "按类型标注把值转回来", "拿到字符串而不是 int", "warning 里的 Can't parse argument"],
+        ["06 broker", "字节进队列、出队列", "消息丢失", "broker 有没有确认机制"],
+        ["07 结果", "结果另走 result backend", "永远等不到结果", "配没配 result backend"],
+        ["08 依赖", "worker 侧现造连接", "任务里没有 db 可用", "有没有写 TaskiqDepends"],
+        ["09 中间件", "八个钩子挂横切逻辑", "中间件里访问不到东西", "这个钩子在哪一侧跑"],
+        ["10 确认", "决定何时说「处理完了」", "重复执行 / 任务丢失", "--ack-type 与幂等设计"],
+        ["11 worker", "进程 × 协程两层并发", "并发上不去 / 事件循环卡死", "任务是不是 CPU 密集"],
+        ["12 调度", "到点替你 kiq 一次", "定时任务不触发 / 触发两次", "scheduler 起了没、起了几个"],
+        ["13 配置", "把上面的选择落成代码", "—", "第 13 节那四个问题"]
+      ]);
+    TQ.code(TQ.$("#tq-o-transfer", root), {
+      kind: "pseudo",
+      caption: "换任何一个任务队列，都要问的七个问题",
+      lines: [
+        "1. 参数怎么序列化？哪些类型过不去？",
+        "2. 任务用什么名字寻址？名字对不上会怎样？",
+        "3. 结果存在哪？要不要单独配？会不会过期？",
+        "4. 消息什么时候算处理完？崩溃时是丢还是重？",
+        "5. 失败重试是默认开还是要显式开？重试算新消息吗？",
+        "6. worker 的并发模型是进程、线程还是协程？",
+        "7. 定时任务由谁触发？能不能多实例？",
+      ],
+      highlight: [1, 4],
+    });
+    table(TQ.$("#tq-o-gaps", root),
+      ["没讲的", "为什么", "想看的话"],
+      [["各 broker 的运维", "那是 Redis / RabbitMQ 自己的话题，和 taskiq 无关", "对应中间件的官方文档"],
+       ["从 Celery 迁移", "两边的概念映射够写一篇单独的", "先把这条边界看懂，映射就不难了"],
+       ["taskiq 全部插件与 API", "本文是主干，不是 API 手册", "官方文档"],
+       ["性能数字", "没有实测，不编", "自己压一遍，先看第 11 节那两层并发"]]);
+  });
+})();
+
+</script>
