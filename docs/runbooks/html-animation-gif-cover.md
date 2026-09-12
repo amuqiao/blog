@@ -276,11 +276,11 @@ content/posts/<slug>/cover.gif
   static/posts/pelican-bicycle-two-step-test/opus-5-high-2d.html \
   --duration 4 \
   --fps 15 \
-  --width 800 \
-  --height 700 \
-  --selector .stage \
+  --width 900 \
+  --height 594 \
+  --selector body \
   --browser chrome \
-  --clock realtime
+  --clock auto
 ```
 
 这些参数分别控制：
@@ -289,11 +289,11 @@ content/posts/<slug>/cover.gif
 | --- | --- | --- |
 | `--duration` | 截取几秒动画 | 动作周期长就调大 |
 | `--fps` | 每秒截几帧 | 越高越顺滑，文件也越大 |
-| `--width` | GIF 最大宽度 | 首页卡片一般不必太大 |
-| `--height` | 浏览器视口高度 | 页面内容被截断时调大 |
-| `--selector` | 截哪个元素 | 默认 `.stage`，没有这个类就换成实际容器 |
+| `--width` | GIF 最大宽度 | 默认 900，首页卡片一般不必更大 |
+| `--height` | 浏览器视口高度 | 默认 594，页面内容被截断时调大 |
+| `--selector` | 截哪个元素 | 默认 `body`，有固定舞台就指定 `.stage`、`#stage` 等容器 |
 | `--browser` | 用 Chrome 还是 Chromium | 本机没 Chrome 时用 `chromium` |
-| `--clock` | 实时时钟或虚拟时钟 | 普通动画用 `realtime` 更稳 |
+| `--clock` | 实时时钟或虚拟时钟 | 默认 `auto`；CSS 动画用 `realtime`，RAF/performance.now 动画可用 `virtual` |
 
 ## 截图脚本做了什么
 
@@ -309,7 +309,7 @@ scripts/gif/capture.mjs
 1. 解析命令行参数
 2. 打开输入 HTML
 3. 等页面和字体加载完成
-4. 找到截图元素，比如 .stage
+4. 找到截图元素，默认 body，也可以指定 .stage、#stage 等容器
 5. 按 duration * fps 截出多张 PNG
 6. 调用 gifski 合成 cover.gif
 ```
@@ -320,7 +320,7 @@ scripts/gif/capture.mjs
 HTML 动画
   -> Playwright 启动浏览器
   -> Chrome 渲染真实页面
-  -> 截取 .stage 元素
+  -> 截取 body 或指定的舞台元素
   -> 生成 frame-0001.png、frame-0002.png、...
   -> gifski 合成 GIF
   -> content/posts/<slug>/cover.gif
@@ -332,7 +332,7 @@ HTML 动画
 
 第一，输出文件先写到临时文件，成功后再替换目标 GIF。这样如果截图或编码中途失败，不会把原来的 `cover.gif` 破坏掉。
 
-第二，默认用 `realtime`。有些动画靠 `requestAnimationFrame`、CSS animation、第三方渲染循环共同驱动，真实浏览器时间比强行虚拟时间更接近读者实际看到的效果。
+第二，默认用 `auto`。脚本会为同时包含 `requestAnimationFrame` 和 `performance.now()` 的 HTML 选择 `virtual`，让每一帧都按目标时间点采样；其他页面走 `realtime`。`realtime` 会按实际捕获耗时计算 GIF 合成帧率，避免因为截图太慢导致最终 GIF 快放。
 
 ## 写文章入口
 

@@ -167,6 +167,9 @@ npm install
 ./run.sh blog gif static/posts/<slug>/demo.html
 ```
 
+默认按博客封面尺寸生成：`--duration 4 --fps 15 --width 900 --height 594 --selector body --clock auto`。如果页面里有更稳定的动画舞台，可以用 `--selector` 指定，例如 `--selector '#stage'` 或 `--selector .stage`。
+`--clock auto` 会为 `requestAnimationFrame` 和 `performance.now()` 驱动的动画选择 `virtual`，让导出的 GIF 速度更稳定；其他动画走 `realtime`。
+
 需要作为封面时，显式输出为 `cover.gif`：
 
 ```bash

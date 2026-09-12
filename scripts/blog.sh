@@ -66,7 +66,8 @@ usage() {
             <slug> 不能包含 /、.. 或空白字符。
   gif       执行：node scripts/gif/capture.mjs <input.html> [output.gif]
             依赖 Node、Playwright、Google Chrome 和 gifski。首次使用前运行 npm install。
-            常用参数：--duration 4 --fps 15 --width 800 --selector .stage --browser chrome --clock realtime
+            默认参数：--duration 4 --fps 15 --width 900 --height 594 --selector body --browser chrome --clock auto
+            auto 会为 RAF/performance.now 动画选择 virtual，其他动画走 realtime；也可手动传 --clock。
   cover     执行：node scripts/cover/generate.mjs <slug> [options]
             两段生成：先让文本模型把文章信息写成图片提示词，再交给生图模型出图。
             若 static/posts/<slug>/ 下有 HTML 交互页，会一并抽取其标题层级与每节

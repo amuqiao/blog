@@ -11,11 +11,11 @@ const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const defaults = {
   duration: 4,
   fps: 15,
-  width: 800,
-  height: 700,
+  width: 900,
+  height: 594,
   quality: 90,
-  selector: ".stage",
-  clock: "realtime",
+  selector: "body",
+  clock: "auto",
   browser: "chrome",
   keepFrames: false,
 };
@@ -35,11 +35,11 @@ function usage() {
 选项:
   --duration <秒>     动画时长，默认 4。
   --fps <帧率>        GIF 帧率，默认 15。
-  --width <像素>      GIF 最大宽度，默认 800。
-  --height <像素>     浏览器视口高度，默认 700。
+  --width <像素>      GIF 最大宽度，默认 900。
+  --height <像素>     浏览器视口高度，默认 594。
   --quality <1-100>  gifski 质量，默认 90。
-  --selector <CSS>   截图元素，默认 .stage。
-  --clock <模式>      realtime 或 virtual，默认 realtime。
+  --selector <CSS>   截图元素，默认 body；有固定舞台时建议指定 .stage、#stage 等容器。
+  --clock <模式>      auto、realtime 或 virtual，默认 auto；auto 会为 RAF/performance.now 动画选择 virtual。
   --browser <浏览器>  chrome 或 chromium，默认 chrome。
   --keep-frames      保留临时 PNG 帧目录，便于排查。
   -h, --help         查看帮助。
@@ -142,8 +142,8 @@ function validateOptions(options) {
   assertNumber("--height", options.height, 80, 4096);
   assertNumber("--quality", options.quality, 1, 100);
 
-  if (!["virtual", "realtime"].includes(options.clock)) {
-    throw new Error("--clock 只能是 virtual 或 realtime。");
+  if (!["auto", "virtual", "realtime"].includes(options.clock)) {
+    throw new Error("--clock 只能是 auto、virtual 或 realtime。");
   }
 
   if (!["chrome", "chromium"].includes(options.browser)) {
@@ -200,6 +200,19 @@ async function assertInputFile(inputAbs) {
   }
 }
 
+async function resolveClock(inputAbs, options) {
+  if (options.clock !== "auto") {
+    return options.clock;
+  }
+
+  const html = await fs.readFile(inputAbs, "utf8");
+  if (html.includes("requestAnimationFrame") && html.includes("performance.now")) {
+    return "virtual";
+  }
+
+  return "realtime";
+}
+
 async function preparePage(page, inputAbs, options) {
   if (options.clock === "virtual") {
     await page.addInitScript(() => {
@@ -234,8 +247,23 @@ async function preparePage(page, inputAbs, options) {
     });
   }
 
-  await page.goto(pathToFileURL(inputAbs).href, { waitUntil: "load" });
-  await page.evaluate(() => document.fonts?.ready);
+  await page.goto(pathToFileURL(inputAbs).href, { waitUntil: "commit" });
+  await page.waitForSelector(options.selector, { state: "attached", timeout: 10000 });
+  const fontsReady = await page.evaluate(() => {
+    if (!document.fonts?.ready) {
+      return true;
+    }
+
+    return Promise.race([
+      document.fonts.ready.then(() => true),
+      new Promise((resolve) => {
+        window.setTimeout(() => resolve(false), 2000);
+      }),
+    ]);
+  });
+  if (!fontsReady) {
+    console.warn("警告：字体加载等待超过 2 秒，已继续截图。");
+  }
 
   if (options.clock === "virtual") {
     await page.evaluate(() => window.__captureStep?.(0));
@@ -251,25 +279,50 @@ async function captureFrames(page, frameDir, options) {
     throw new Error(`未找到截图元素：${options.selector}`);
   }
 
-  await locator.scrollIntoViewIfNeeded();
+  const selector = options.selector.trim().toLowerCase();
+  if (selector !== "body" && selector !== "html") {
+    await locator.scrollIntoViewIfNeeded();
+  }
 
   const frameCount = Math.max(2, Math.round(options.duration * options.fps));
   const frameDelay = 1000 / options.fps;
   const frames = [];
 
-  for (let i = 0; i < frameCount; i += 1) {
-    if (options.clock === "virtual") {
+  if (options.clock === "virtual") {
+    for (let i = 0; i < frameCount; i += 1) {
       await page.evaluate((time) => window.__captureStep?.(time), i * frameDelay);
-    } else if (i > 0) {
-      await page.waitForTimeout(frameDelay);
+
+      const framePath = path.join(frameDir, `frame-${String(i + 1).padStart(4, "0")}.png`);
+      await locator.screenshot({ path: framePath });
+      frames.push(framePath);
     }
 
-    const framePath = path.join(frameDir, `frame-${String(i + 1).padStart(4, "0")}.png`);
-    await locator.screenshot({ path: framePath });
-    frames.push(framePath);
+    return { frames, encodeFps: options.fps };
   }
 
-  return frames;
+  const start = performance.now();
+  let nextFrameAt = start;
+
+  while (performance.now() - start < options.duration * 1000 || frames.length < 2) {
+    const waitMs = nextFrameAt - performance.now();
+    if (waitMs > 0) {
+      await page.waitForTimeout(waitMs);
+    }
+
+    const framePath = path.join(frameDir, `frame-${String(frames.length + 1).padStart(4, "0")}.png`);
+    await locator.screenshot({ path: framePath });
+    frames.push(framePath);
+
+    nextFrameAt += frameDelay;
+    const now = performance.now();
+    while (nextFrameAt < now) {
+      nextFrameAt += frameDelay;
+    }
+  }
+
+  const elapsedSeconds = Math.max(0.1, (performance.now() - start) / 1000);
+  const encodeFps = Math.max(1, Math.min(options.fps, frames.length / elapsedSeconds));
+  return { frames, encodeFps };
 }
 
 async function main() {
@@ -290,6 +343,7 @@ async function main() {
   );
 
   await assertInputFile(inputAbs);
+  options.clock = await resolveClock(inputAbs, options);
   await fs.mkdir(path.dirname(outputAbs), { recursive: true });
   await fs.rm(tempOutputAbs, { force: true });
 
@@ -312,11 +366,11 @@ async function main() {
     });
 
     await preparePage(page, inputAbs, options);
-    const frames = await captureFrames(page, frameDir, options);
+    const { frames, encodeFps } = await captureFrames(page, frameDir, options);
 
     await run("gifski", [
       "--fps",
-      String(options.fps),
+      encodeFps.toFixed(3),
       "--quality",
       String(options.quality),
       "--width",
@@ -329,6 +383,7 @@ async function main() {
 
     await fs.rename(tempOutputAbs, outputAbs);
     console.log(`已生成 GIF：${path.relative(ROOT_DIR, outputAbs) || outputAbs}`);
+    console.log(`使用参数：--duration ${options.duration} --fps ${options.fps} --width ${options.width} --height ${options.height} --selector ${options.selector} --clock ${options.clock}`);
   } catch (error) {
     if (String(error.message).includes("Executable doesn't exist")) {
       throw new Error(`缺少浏览器运行时。默认模式需要安装 Google Chrome；或运行 npx playwright install chromium 后改用 --browser chromium。
