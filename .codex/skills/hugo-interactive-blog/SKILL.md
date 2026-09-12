@@ -1,19 +1,19 @@
 ---
 name: hugo-interactive-blog
-description: 把想法、素材或草稿转成适合长期维护的 Hugo Blowfish 知识型博客文章，优先用 Markdown + shortcode + 图文表达，复杂知识点再配文章级 HTML/CSS/vanilla JS 交互可视化。
+description: 把想法、素材或草稿转成适合长期维护的 Hugo Blowfish 知识型博客文章，优先用 Markdown + shortcode + 图文表达，按需加入文章级 HTML/CSS/vanilla JS 交互增强。
 ---
 
 # Hugo Interactive Blog
 
 当任务是在本仓库创建、扩写、重写或整理博客文章时使用本 skill，尤其是用户只给出想法、主题、素材或草稿，希望产出可发布的 Hugo 知识型文章时。
 
-目标不是生成一份难维护的单文件 HTML，也不是堆文字，而是用 Hugo 的内容结构、Blowfish shortcode、图文表达和必要的交互可视化，把知识点讲透并方便长期维护。
+目标不是生成一份难维护的单文件 HTML，也不是堆文字，而是用 Hugo 的内容结构、Blowfish shortcode、图文表达和必要的局部交互，把知识点讲透并方便长期维护。
 
 不要把它用于通用前端应用、无关文档，或不触碰博客内容的仓库维护任务。创建或大幅改写教程/解释型文章时，先阅读 [写作指南](references/writing-guide.md)。
 
 ## 创作取向
 
-- 默认产物是契合 Hugo 的博客文章：Markdown 承担主线，shortcode 承担主题一致的图文组件，复杂交互才进入独立 HTML/CSS/JS。
+- 默认产物是契合 Hugo 的博客文章：Markdown 承担主线，shortcode 承担主题一致的图文组件，HTML/CSS/JS 只作为必要的文章级交互增强。
 - 能用图表达的，不用长段文字硬讲；能用交互图表达的，用少量文字辅助读者观察和验证。
 - 写作目标是建立可复述的心智模型：先让读者看见结构、流程、输入输出或状态变化，再补术语和边界。
 - 交互不是装饰。只有当它能帮助理解、对比、验证或迁移时才加入。
@@ -26,15 +26,16 @@ description: 把想法、素材或草稿转成适合长期维护的 Hugo Blowfis
 - `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 slug 必须一致。
 - 发布内容不要引用 `.data/`；它只作为源素材、截图或外部资源的临时工作区。
 
-## 内容策略
+## 表达复杂度阶梯
 
-按文章需要选择最小发布形态：
+按文章需要逐级增加表达能力，不要一开始就进入全 HTML：
 
-- Hugo 原生文章：全文保留在 `index.md`，用 Markdown、Mermaid、图表、tabs、steps、timeline、gallery 等 shortcode 组织说明。
-- Markdown + 局部交互：`index.md` 保留完整讲解主线，把需要操作、调参、播放、对比的部分嵌入 `iframe` 或链接到独立页面。
-- 高交互讲义或模拟器：`index.md` 只保留 front matter、简短导语、入口链接和 `iframe`；完整正文和交互体验以 HTML 页面为真源。
+- 第一层：用 Markdown 写清主线、上下文、例子、边界和结论。
+- 第二层：用 Blowfish shortcode 承担主题一致的图文表达，例如 Mermaid、图表、步骤、时间线、折叠、标签页、图片集。
+- 第三层：当 shortcode 不足以表达“读者需要操作后观察变化”的内容时，在 `static/posts/<slug>/...` 增加局部 HTML/CSS/vanilla JS 交互，并从 Markdown 嵌入或链接。
+- 第四层：只有用户明确要求完整交互页，或正文理解确实依赖连续交互体验时，才让独立 HTML 成为正文真源；否则保持 Markdown 是文章主线。
 
-不要在 Markdown 和独立 HTML 里重复维护完整正文。两者同时存在时，必须明确哪一份是真源。
+不要在 Markdown 和独立 HTML 里重复维护完整正文。默认由 Markdown 做正文真源；只有明确进入完整交互页时，才让 HTML 做真源。
 
 ## Hugo 与 Blowfish
 
