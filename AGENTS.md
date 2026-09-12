@@ -18,6 +18,12 @@
 - 不读取 `public/`、`resources/`、`.data/`，除非任务明确是排查生成物、缓存或临时素材。
 - 只有在用户明确要求全站内容审查、链接迁移、分类整理、构建错误定位、资源引用排查时，才扩大读取范围。
 
+## Agent Skills
+
+- 技能真源是 `.agents/skills/<skill-name>/`，跨工具共用，只维护这一份。
+- `.claude/skills/<skill-name>` 是指向真源的符号链接，Claude Code 只从这里装载；新增 skill 时要补一条同名链接，不要复制副本。
+- 写博客文章（新建、扩写、重写、整理素材、加图表或交互）走 `hugo-interactive-blog`。
+
 ## Hugo 博客资源映射
 
 - 普通文章使用页面包：`content/posts/<post-slug>/index.md`。
