@@ -371,6 +371,7 @@ const SYSTEM_PROMPT = [
   '  "concept": 中文一句话。这张图画的是什么、画面主体是谁、正在发生什么动作，一次说死。',
   '  "style_label": a short Chinese label naming the visual style you used, for the author\'s records.',
   '  "prompt": the English image prompt, one paragraph, no markdown, no bullet points.',
+  'Every field value must be a JSON string enclosed in double quotes. Never return a number such as "concept": 1.',
   "",
   "concept comes first because prompt must be a faithful expansion of it: the prompt may not introduce a",
   "second subject or a second scene that concept did not already name. Settle the picture in concept, then",

@@ -4,7 +4,7 @@ date: 2026-09-12
 lastmod: 2026-09-12
 draft: false
 showHero: false
-featureimage: "cover.gif"
+featureimage: "cover.png"
 description: "面向新用户的 Look 上手指南：DMG 安装、核心快捷键、命令模式、中文搜索配置和简单磁贴设置。"
 tags:
   - Look

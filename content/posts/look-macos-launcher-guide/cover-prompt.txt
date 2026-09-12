@@ -1,0 +1,13 @@
+# 生成时间 2026-09-12T18:19:15+08:00
+# 文本模型 gpt-4.1
+# 生图模型 gpt-image-2 · 2048x1152 · quality=high
+# 风格来源 文本模型自选
+# 画面构思 一个人坐在简洁明亮的办公桌前，只用一只手正在熟练地通过键盘调出弹出的应用启动窗口，屏幕上显示出聚焦的输入框和模糊的图标背景，桌面上没有杂物，氛围高效安静。
+# 风格 极简插画，柔和浅色调
+# 交互页 static/posts/look-macos-launcher-guide/owl-ascii-animation.html
+# 补充要求 无
+# 复现 ./run.sh blog cover look-macos-launcher-guide --quality high --force
+
+A minimalist illustration showing a person sitting at a clean, well-lit desk, easily bringing up a floating application launcher window using one hand on the keyboard. The computer screen prominently displays a focused input box, with blurred colorful app icons visible in the background. The desk is tidy, with nothing but a keyboard and monitor, capturing a quiet, efficient atmosphere. The overall palette is soft and light, with gentle pastel colors, smooth flat textures, and subtle shadows on a pale background.
+Composition: wide 16:9 landscape, primary subject centered in a generous safe area so responsive cropping preserves the meaning.
+Constraints: no readable text, no letters, no numbers, no logos, no trademarks, no watermark, no decorative dashboard, no meaningless charts. Depict technically meaningful relationships rather than generic atmosphere.
