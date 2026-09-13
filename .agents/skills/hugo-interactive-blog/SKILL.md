@@ -3,11 +3,11 @@ name: hugo-interactive-blog
 description: 在本仓库写 Hugo 博客文章时使用。用于把主题、笔记或草稿构建成有主旨、有心智模型的文章，并用 Blowfish shortcode、Mermaid、图表、文字可视化、局部 HTML/CSS/vanilla JS 交互或 iframe demo 辅助讲解。
 ---
 
-# Hugo Interactive Blog
+# 本项目 Hugo 博客写作规范
 
-这个 skill 只负责一件事：把博客写成适合 Hugo 长期维护、读者容易理解的形态。
+这个 skill 只负责本项目新增、扩写和重写博客文章的写作规范：先用成熟讲解方法确定文章主旨和可见心智模型，再用 Hugo shortcode、Mermaid、文字可视化和局部 HTML/CSS/JS 把知识讲清楚、讲美观、讲可维护。
 
-不要把它当写作待办清单。主题、结构、深浅和表达方式由当前文章决定；这里只提醒如何使用 Hugo、Blowfish shortcode、Markdown、Mermaid、HTML/CSS/JS 组合出更清楚、更美观的文章。
+不要把它当执行待办清单。主题、结构、深浅和表达方式由当前文章决定；这里给的是本项目博客的默认表达方向和少量仓库事实。
 
 目标不是优先 Markdown，而是优先讲清楚。每篇博客必须在开头给出清楚主旨，并用文字可视化或图文结合呈现核心心智模型；读者应能通过这部分快速理解文章要解决什么问题、关键对象如何关联、后文会沿哪条线展开。
 
@@ -90,6 +90,14 @@ demo 里的文字、图形、按钮和状态反馈都应该服务讲解；模拟
 如果 demo 需要独立打开或代码量会淹没正文，放到 `static/posts/<slug>/`，并在文章中用相对路径 iframe 引入。`content/posts/<slug>/` 和 `static/posts/<slug>/` 的 slug 保持一致。
 
 iframe 是独立页面，继承不到父页面的主题状态；需要明暗适配时在 iframe 自己的 CSS 中处理。
+
+## 文章元信息
+
+新文章 front matter 保持足够完整，方便长期维护、列表展示、搜索和分享。默认包含 `title`、`description`、`summary`、`date`、`lastmod`、`draft`、`tags`、`categories`、`series`、`series_order`、`showHero`、`showTableOfContents`。
+
+`title` 写清主题和角度；`description` 面向 SEO / meta 描述，说明文章解决什么问题；`summary` 面向站内卡片和摘要入口，帮助读者判断是否点击。`date` 和 `lastmod` 使用带 `+08:00` 的时间；正式发布时 `draft: false`。`series` / `series_order` 只在系列文章里填值。
+
+不要默认写 `slug`、`url`、`aliases`、`robots`、`externalUrl`、`layout`、`type`；这些只在迁移、隐藏、外链或特殊模板时使用。
 
 ## 仓库与验证
 
