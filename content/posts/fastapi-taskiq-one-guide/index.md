@@ -72,7 +72,7 @@ flowchart LR
 - **输出**：投递成功，或抛 `SendTaskError`
 - **关键参数**：连接 URL（决定 API 和 worker 是不是在同一个队列上）
 - **成功标志**：`.kiq()` 返回了带 `task_id` 的对象
-- **常见错误**：API 连 `localhost`、worker 在容器里也连 `localhost`——那是两个队列
+- **常见错误**：API 连 `localhost`、worker 在容器里也连 `localhost`——后者指向容器自己，两边碰不到面
 - **能不能跳过**：不能，它是核心抽象
 - **下一步**：消息进队列，等 worker `listen` 取走
 {{< /tab >}}
