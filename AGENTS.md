@@ -35,6 +35,7 @@
 - `date` 和 `lastmod` 使用带 `+08:00` 的时间；正式发布时 `draft: false`。
 - `series` / `series_order` 只在系列文章里填值。
 - 不要默认写 `slug`、`url`、`aliases`、`robots`、`externalUrl`、`layout`、`type`；这些只在迁移、隐藏、外链或特殊模板时使用。
+- 外部项目或仓库首次出现时，正文优先带可点击链接；代码块 URL 不替代正文链接。
 - 架构图、流程图和时序图优先使用 Blowfish 的 `mermaid` shortcode；不要使用当前站点尚未配置渲染支持的 `mermaid` 代码围栏。
 - Mermaid 使用 `{{< mermaid >}}...{{< /mermaid >}}`；语法保持朴素，短 label、普通箭头、少用复杂标点。
 - Hugo 构建不会解析 Mermaid 图语法；修改 Mermaid 后运行 `./run.sh blog mermaid <path>` 或 `./run.sh blog verify` 验证 shortcode 内的 Mermaid 语法是否能解析。
