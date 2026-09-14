@@ -1,0 +1,31 @@
+AGENTS.md
+  s_c2c4c4bccbf883::t_c96cfca91cf5ad 24,38-39,48-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "d1ef5a290011e0dc5ca6c14c2d7dd067eab7c60c",
+  "prompts": {},
+  "sessions": {
+    "s_c2c4c4bccbf883": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6aa57eed76e8e3e08a3c0533",
+        "model": "Doubao-Seed-2.1-pro__dev"
+      },
+      "human_author": "wangqiao <wangqiao@crazymaplestudio.com>",
+      "custom_attributes": {
+        "tool_use_id": "6aa7df0ea3f35911dee8edd9",
+        "display_model_name": "Doubao-Seed-2.1-Pro",
+        "source_scene": "agent",
+        "external_session_id": "6aa57eed76e8e3e08a3c0533",
+        "tool_name": "Shell",
+        "client_type": "ide",
+        "edit_kind": "bash",
+        "operation_id": "6aa7df0ea3f35911dee8edd9",
+        "session_id": "6aa57eed76e8e3e08a3c0533",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
