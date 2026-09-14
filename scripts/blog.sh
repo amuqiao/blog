@@ -20,6 +20,7 @@ usage() {
   stop      停止当前项目的本地 Hugo 预览服务。
   build     构建静态站点到 public/。
   verify    运行发布前最小验证。
+  mermaid   验证文章中的 Hugo mermaid shortcode。
   new-post  创建新的文章页面包。
   gif       将 HTML 动画截图导出为 GIF。
   cover     根据文章 slug 调用 OpenAI Image API 生成 cover.png。
@@ -43,6 +44,12 @@ usage() {
   # 发布前验证。
   ./run.sh blog verify
 
+  # 验证全部文章中的 mermaid shortcode。
+  ./run.sh blog mermaid
+
+  # 验证指定文章或目录中的 mermaid shortcode。
+  ./run.sh blog mermaid content/posts/my-note/index.md
+
   # 创建 content/posts/my-note/index.md。
   ./run.sh blog new-post my-note
 
@@ -61,7 +68,10 @@ usage() {
   stop      只停止当前项目根目录下的 Hugo 预览服务。
             如果目标端口没有当前项目服务，会说明原因并退出。
   build     执行：hugo --gc --minify
-  verify    执行：hugo --gc --minify
+  verify    执行：hugo --gc --minify，然后验证 content/posts 中的 mermaid shortcode。
+  mermaid   执行：node scripts/mermaid/verify.mjs [path...]
+            无参数时扫描 content/posts，可传入一个或多个 Markdown 文件或目录。
+            只验证 Hugo mermaid shortcode，不处理普通 markdown 代码围栏。
   new-post  执行：hugo new content posts/<slug>/index.md
             <slug> 不能包含 /、.. 或空白字符。
   gif       执行：node scripts/gif/capture.mjs <input.html> [output.gif]
@@ -293,6 +303,18 @@ case "$action" in
     shift
     require_hugo
     hugo --gc --minify "$@"
+    require_command node
+    node "$ROOT_DIR/scripts/mermaid/verify.mjs"
+    ;;
+  mermaid)
+    shift
+    case "${1:-}" in
+      -h|--help|help)
+        exec node "$ROOT_DIR/scripts/mermaid/verify.mjs" --help
+        ;;
+    esac
+    require_command node
+    exec node "$ROOT_DIR/scripts/mermaid/verify.mjs" "$@"
     ;;
   new-post)
     shift

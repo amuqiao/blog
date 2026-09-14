@@ -7,10 +7,13 @@
   },
   "scripts": {
     "capture:gif": "node scripts/gif/capture.mjs",
-    "cover": "node scripts/cover/generate.mjs"
+    "cover": "node scripts/cover/generate.mjs",
+    "mermaid": "node scripts/mermaid/verify.mjs"
   },
   "devDependencies": {
     "gray-matter": "^4.0.3",
+    "jsdom": "^29.1.1",
+    "mermaid": "^12.0.0",
     "openai": "^7.12.1",
     "playwright": "^1.55.0"
   }
