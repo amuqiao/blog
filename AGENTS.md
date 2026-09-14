@@ -20,9 +20,8 @@
 
 ## Agent Skills
 
-- 技能真源是 `.agents/skills/<skill-name>/`，跨工具共用，只维护这一份。
-- `.claude/skills/<skill-name>` 是指向真源的符号链接，Claude Code 只从这里装载；新增 skill 时要补一条同名链接，不要复制副本。
 - 本项目 Hugo 博客规范直接维护在 `AGENTS.md`，不通过项目级 skill 承载。
+- 如未来确需项目级 skill，真源放 `.codex/skills/<skill-name>/`，`.claude/skills/<skill-name>` 只保留指向真源的符号链接。
 - `AGENTS.md` 只记录目录、资源、shortcode、front matter、构建验证等基础规范；不要加入写作方法论或表达风格指导。
 
 ## Hugo 博客基础规范
@@ -36,6 +35,8 @@
 - `series` / `series_order` 只在系列文章里填值。
 - 不要默认写 `slug`、`url`、`aliases`、`robots`、`externalUrl`、`layout`、`type`；这些只在迁移、隐藏、外链或特殊模板时使用。
 - 外部项目或仓库首次出现时，正文优先带可点击链接；代码块 URL 不替代正文链接。
+- 文章开头必须先给出文章主旨：一句话说明本文要解决的问题、核心判断或结论。
+- 文章开头必须提供心智模型：可用图、表、流程、对象关系、对照表或短文字结构承载，不把背景铺垫当作开头。
 - 架构图、流程图和时序图优先使用 Blowfish 的 `mermaid` shortcode；不要使用当前站点尚未配置渲染支持的 `mermaid` 代码围栏。
 - Mermaid 使用 `{{< mermaid >}}...{{< /mermaid >}}`；语法保持朴素，短 label、普通箭头、少用复杂标点。
 - Hugo 构建不会解析 Mermaid 图语法；修改 Mermaid 后运行 `./run.sh blog mermaid <path>` 或 `./run.sh blog verify` 验证 shortcode 内的 Mermaid 语法是否能解析。
@@ -44,7 +45,9 @@
 - 文章内局部 JS 使用 vanilla JS，并限制在当前文章局部交互范围内；需要适配暗色时使用文章专属 class 和主题变量。
 - 需要原样发布的独立 HTML demo、可直接打开的实验页面、完整前端静态小作品，放在同名静态目录：`static/posts/<post-slug>/...`。
 - `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 `<post-slug>` 必须一致，用 slug 建立一一对应关系。
-- 文章引用同名静态目录中的独立 HTML 时，优先使用同级相对路径，例如 `2d.html`、`3d.html`；构建后对应 `/posts/<post-slug>/2d.html`、`/posts/<post-slug>/3d.html`。
+- 单 HTML 嵌入时，Markdown 文章从同名 slug 目录用同级相对路径引用，例如 `interactive.html`；构建后对应 `/posts/<post-slug>/interactive.html`。
+- 多 HTML 嵌入时，多个 HTML 都放在同一个 `static/posts/<post-slug>/` 下，Markdown 中分别用同级相对路径链接或 iframe，例如 `2d.html`、`3d.html`。
+- 不在 `static/posts/<post-slug>/` 下放 `index.html`，避免和 Hugo 生成的文章页路径混淆。
 - 对“Markdown 摘要 + HTML 交互页”的文章，HTML 是正文和交互真源；Markdown 只保留 front matter、少量导语、入口按钮和 iframe。
 - Markdown 内嵌独立 HTML 使用普通 `iframe`；长交互页由文章自行设置固定 `height` 并提供“打开完整交互页”入口，固定画幅演示使用 `aspect-ratio`，不做自动高度计算。
 - Markdown 不重复维护 HTML 中的完整正文、模块目录或交互说明，避免形成两份笔记。
