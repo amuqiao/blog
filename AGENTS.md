@@ -22,16 +22,25 @@
 
 - 技能真源是 `.agents/skills/<skill-name>/`，跨工具共用，只维护这一份。
 - `.claude/skills/<skill-name>` 是指向真源的符号链接，Claude Code 只从这里装载；新增 skill 时要补一条同名链接，不要复制副本。
-- 写博客文章（新建、扩写、重写、整理素材、加图表或交互）走 `hugo-interactive-blog`。
+- 本项目 Hugo 博客规范直接维护在 `AGENTS.md`，不通过项目级 skill 承载。
+- `AGENTS.md` 只记录目录、资源、shortcode、front matter、构建验证等基础规范；不要加入写作方法论或表达风格指导。
 
-## Hugo 博客资源映射
+## Hugo 博客基础规范
 
-- 普通文章使用页面包：`content/posts/<post-slug>/index.md`。
+- 普通文章使用页面包：`content/posts/<post-slug>/index.md`；新建文章优先使用 `./run.sh blog new-post <post-slug>`。
 - 文章专属图片、PDF、JSON、音频、视频等页面资源，优先放在同一个页面包内：`content/posts/<post-slug>/...`。
 - 文章列表/首页卡片封面统一命名为 `cover.*`；文章页 hero 背景统一命名为 `background.*`，让 Blowfish 自动按用途识别。
-- 普通文章的静态封面使用 `./run.sh blog cover <slug>` 生成到文章页面包；命令读取环境变量 `OPENAI_API_KEY`，默认不覆盖已有 `cover.png`。
+- 普通文章的静态封面使用 `./run.sh blog cover <post-slug>` 生成到文章页面包；命令读取环境变量 `OPENAI_API_KEY`，默认不覆盖已有 `cover.png`。
+- 新文章 front matter 默认包含 `title`、`description`、`summary`、`date`、`lastmod`、`draft`、`tags`、`categories`、`series`、`series_order`、`showHero`、`showTableOfContents`。
+- `date` 和 `lastmod` 使用带 `+08:00` 的时间；正式发布时 `draft: false`。
+- `series` / `series_order` 只在系列文章里填值。
+- 不要默认写 `slug`、`url`、`aliases`、`robots`、`externalUrl`、`layout`、`type`；这些只在迁移、隐藏、外链或特殊模板时使用。
 - 架构图、流程图和时序图优先使用 Blowfish 的 `mermaid` shortcode；不要使用当前站点尚未配置渲染支持的 `mermaid` 代码围栏。
+- Mermaid 使用 `{{< mermaid >}}...{{< /mermaid >}}`；语法保持朴素，短 label、普通箭头、少用复杂标点。
+- Hugo 构建不会解析 Mermaid 图语法；修改 Mermaid 后运行 `./run.sh blog mermaid <path>` 或 `./run.sh blog verify` 验证 shortcode 内的 Mermaid 语法是否能解析。
+- 需要结构化组件时，优先使用 Blowfish 已有 shortcode，而不是手写等价 raw HTML；可用 shortcode 以 `themes/blowfish/layouts/shortcodes/` 为准。
 - 仅服务于文章局部的少量 HTML + CSS 可直接嵌入 Markdown；CSS 必须使用文章专属 class 限定作用域，避免污染全站样式。
+- 文章内局部 JS 使用 vanilla JS，并限制在当前文章局部交互范围内；需要适配暗色时使用文章专属 class 和主题变量。
 - 需要原样发布的独立 HTML demo、可直接打开的实验页面、完整前端静态小作品，放在同名静态目录：`static/posts/<post-slug>/...`。
 - `content/posts/<post-slug>/` 与 `static/posts/<post-slug>/` 的 `<post-slug>` 必须一致，用 slug 建立一一对应关系。
 - 文章引用同名静态目录中的独立 HTML 时，优先使用同级相对路径，例如 `2d.html`、`3d.html`；构建后对应 `/posts/<post-slug>/2d.html`、`/posts/<post-slug>/3d.html`。
@@ -40,6 +49,9 @@
 - Markdown 不重复维护 HTML 中的完整正文、模块目录或交互说明，避免形成两份笔记。
 - 不要在文章或配置中引用 `.data/`；`.data/` 只作为临时输入、截图或外部素材缓存，不属于 Hugo 发布内容。
 - 修改文章 slug、permalink、alias 或同名 `content` / `static` 目录后，必须清理旧 slug、旧 alias 和旧站内链接，不保留历史入口；验证站内入口只指向新 slug。
+- 发布文章前确认 `draft: false`、发布时间是带 `+08:00` 的过去时间，并运行 `./run.sh blog verify`。
+- 构建通过不代表列表卡片和首页展示完整；发布前要确认产物页面、首页/列表入口和 `sitemap.xml` 是否包含目标文章。
+- 验证亮色时不要只依赖系统外观；本仓库默认是 dark，需要在浏览器里设置 `localStorage.setItem("appearance", "light")` 后刷新确认。
 
 ## Hugo 启动入口
 

@@ -45,7 +45,7 @@ Hugo 负责把 `content/` 构建成静态站点，Blowfish 负责页面布局、
 
 - [Hugo extended](https://gohugo.io/installation/) `0.162.0` - `0.165.0`
 - Git submodule 支持，用于拉取 [Blowfish](https://blowfish.page/) 主题
-- 可选：使用封面生成或 GIF 工具时需要 Node.js 20+ 并运行 `npm install`
+- 可选：使用 Mermaid 验证、封面生成或 GIF 工具时需要 Node.js 20+ 并运行 `npm install`
 - 可选：生成静态封面需要环境变量 `OPENAI_API_KEY`
 - 可选：生成 HTML 动画预览 GIF 还需要 [Playwright](https://playwright.dev/)、Google Chrome 和 `gifski`，macOS 可用 `brew install gifski`
 
@@ -80,8 +80,9 @@ git submodule update --init --recursive --depth 1
 | `./run.sh blog new-post my-post` | 创建文章页面包 |
 | `./run.sh blog cover my-post` | 使用 OpenAI Image API 生成文章封面 |
 | `./run.sh blog gif static/posts/my-post/demo.html` | 将 HTML 动画导出为文章 GIF |
+| `./run.sh blog mermaid content/posts/my-post/index.md` | 验证文章中的 Mermaid 语法 |
 | `./run.sh blog build` | 构建静态站点到 `public/` |
-| `./run.sh blog verify` | 发布前最小验证 |
+| `./run.sh blog verify` | 发布前最小验证，并检查 Mermaid 语法 |
 | `./run.sh doctor all` | 完整排障检查 |
 
 本地预览按单例处理：如果目标端口上已经运行的是当前项目的 Hugo 预览服务，再次执行 `./run.sh up` 会提示已运行并成功退出。
@@ -159,6 +160,19 @@ static/posts/<slug>/interactive.html   # 完整正文和交互内容
 ```
 
 不要在发布内容中引用 `.data/`；`.data/` 只作为临时输入、截图或素材缓存。
+
+文章中的 Mermaid 图使用 Hugo shortcode。Hugo 构建不会解析 Mermaid 图语法，修改后用命令行验证：
+
+```bash
+npm install
+./run.sh blog mermaid content/posts/<slug>/index.md
+```
+
+不传路径时默认扫描 `content/posts` 下的 Markdown 文件：
+
+```bash
+./run.sh blog mermaid
+```
 
 如果 HTML demo 需要配一张动图预览，可以从 `static/posts/<slug>/` 里的 HTML 生成 GIF：
 
